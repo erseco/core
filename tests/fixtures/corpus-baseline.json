@@ -1042,5 +1042,41 @@
 	"diagnostic/bad-bounds": {
 		"drawing": "70d237334640f629880eddc98c8fbdcd81b82940ce6d13f31a775b0937fcacc3",
 		"evidence": "20cd938a2ea64f612b3523bc9219130c6fc66cd09b394ea38437488c0b8898b2"
+	},
+	"trunk/fan-out/default": {
+		"drawing": "60cc1d56eef14877ae742f58d2d2353c71dcf98e2300ed20032d4ef5e7a4fc21",
+		"evidence": "bb5c4f0cf93119ca8f61c054fc5b7bb2951153a00b98f72d7730bc8ec26b9a80"
+	},
+	"trunk/fan-out/embedded-css": {
+		"drawing": "d63b14f8ff54e012ea6cd890496022924c4cc99a9468a1df3bbbe5d272722c06",
+		"evidence": "bb5c4f0cf93119ca8f61c054fc5b7bb2951153a00b98f72d7730bc8ec26b9a80"
+	},
+	"trunk/fan-out/full": {
+		"drawing": "668215ea28051ff9c6f17b35c5ce4d337ede3a7e06cba47b67c3441d548ac2b4",
+		"evidence": "bb5c4f0cf93119ca8f61c054fc5b7bb2951153a00b98f72d7730bc8ec26b9a80"
+	},
+	"trunk/fan-in": {
+		"drawing": "0d9129b51abf081d6b9773812cbbb77f3f17817aa3ae14d75b360bfcb662a494",
+		"evidence": "4eba038b9e269cdd185e0ed5c91578448bc7efcfbfac31776d6e24f5e144b494"
+	},
+	"subcircuit/pair": {
+		"drawing": "38d0bda4c009ec920156723a401dfbebdf09b977db065403becc30b7e8cc56bc",
+		"evidence": "2cdb32a31eb551029d097fef437a13698b938eb529d31b011f954379aae3ca53"
+	},
+	"subcircuit/nested": {
+		"drawing": "d139d31a671a57be48550a0800aef487af653561633adb63d1ce6cac83003a12",
+		"evidence": "1fe582442b503ac2f250519a589755f10408eb75cef6bad1da9d825de38e5fcf"
+	},
+	"diagnostic/trunk-without-copper": {
+		"drawing": "a53406abf74dce8cf3f0dd602e53531aa1e4db01404982c7361a41937f1f4fb1",
+		"evidence": "20cd938a2ea64f612b3523bc9219130c6fc66cd09b394ea38437488c0b8898b2"
+	},
+	"diagnostic/subcircuit-cycle": {
+		"drawing": "53506fb9ae2db02c2f2fd7bc8fbd70650c67e16c84a309775afff4f0fd681425",
+		"evidence": "20cd938a2ea64f612b3523bc9219130c6fc66cd09b394ea38437488c0b8898b2"
+	},
+	"diagnostic/subcircuit-terminal": {
+		"drawing": "0739df7b95cda0604bbe5e1e19c98582845871d99d23069a16475b9327c7ef98",
+		"evidence": "20cd938a2ea64f612b3523bc9219130c6fc66cd09b394ea38437488c0b8898b2"
 	}
 }

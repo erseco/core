@@ -424,6 +424,54 @@ const mutants = [
 		to: "connection.trunk = 'from';",
 		tests: ['tests/trunk.test.ts']
 	},
+	/*
+	 * Sub-circuit expansion. Every one of these still produces a document — parts
+	 * stacked at the definition's origin, a default that silently wins, a
+	 * terminal resolved one level short — so each is pinned against the
+	 * hand-flattened declarations it should equal, or against its diagnostic.
+	 */
+	{
+		name: 'copied coordinates are offset by the instance position',
+		file: 'src/parser.ts',
+		from: 'const x = Math.round((Number(component[4]) + dx) * 1000) / 1000;',
+		to: 'const x = Math.round(Number(component[4]) * 1000) / 1000;',
+		tests: ['tests/subcircuit.test.ts']
+	},
+	{
+		name: 'nested instance offsets compose',
+		file: 'src/parser.ts',
+		from: 'dx + Number(instance[3]), dy + Number(instance[4]), bound',
+		to: 'Number(instance[3]), Number(instance[4]), bound',
+		tests: ['tests/subcircuit.test.ts']
+	},
+	{
+		name: 'an instance parameter overrides the default',
+		file: 'src/parser.ts',
+		from: 'const value = supplied.get(parameter) ?? fallback;',
+		to: 'const value = fallback ?? supplied.get(parameter);',
+		tests: ['tests/subcircuit.test.ts']
+	},
+	{
+		name: 'a subcircuit cannot contain itself',
+		file: 'src/parser.ts',
+		from: 'if (stack.includes(kind!)) {',
+		to: 'if (false) {',
+		tests: ['tests/subcircuit.test.ts']
+	},
+	{
+		name: 'expansion is held to the source character budget',
+		file: 'src/parser.ts',
+		from: 'if (characters > characterLimit) {',
+		to: 'if (false) {',
+		tests: ['tests/subcircuit.test.ts']
+	},
+	{
+		name: 'an exposed terminal resolves through every level of nesting',
+		file: 'src/parser.ts',
+		from: 'while (instances.has(id)) {',
+		to: 'if (instances.has(id)) {',
+		tests: ['tests/subcircuit.test.ts']
+	},
 	{
 		name: 'a family set is derived from the registry it classifies',
 		file: 'src/layout.ts',

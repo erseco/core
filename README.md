@@ -46,6 +46,19 @@ kind:ID "label" right-of REF by 190 #color [options]
 SOURCE.port -> TARGET.port #color [line|bezier|ortho options]
 ```
 
+A block you draw more than once can be written once as a sub-circuit and placed by name. Instances may nest, take parameters, and are reached through the terminals the block exposes:
+
+```text
+subcircuit divider [top="10 k" bottom="10 k"] {
+  resistor:RT "{{top}}" at (0, 0) #amber [orientation=down]
+  resistor:RB "{{bottom}}" below RT by 40 #amber [orientation=down]
+  RT.out -> RB.in #amber [ortho]
+  expose mid = RT.out
+}
+divider:U1 at (200, 100) [top="22 k"]
+U1.mid -> ADC.in #blue [ortho]
+```
+
 A net that reaches several terminals can be drawn as a tree: mark a connection `[ortho trunk]` and it branches off the copper its net already has, with a junction dot, instead of running back to its own pin.
 
 Bad variants, duplicate options, unknown ports, mismatched bus widths, unsafe colours, and out-of-bounds geometry all fail with a line-accurate diagnostic before any SVG is written.
@@ -64,7 +77,7 @@ Please read the [limitations](https://schemd.johnowolabiidogun.dev/docs/0.7/over
 
 - **`verifyNetlist` is structural linting, not verification.** It cannot tell you anything about analog correctness, timing, impedance, drive strength, metastability, or quantum validity. A clean result means no rule fired.
 - **Routing is greedy and bounded.** Traces are placed one at a time and retried around contention, which takes a full reversal bus to twelve wires. Past that the bundle is laid out as a set instead, which reaches thirty-two. A document that needs the bundle path reports `routing.nudged`. **Correction:** 0.5 documented thirteen wires as a limit of the channel model rather than of declaration order. That was wrong — reordering genuinely cannot reach it, but the model was never full.
-- **The model is flat.** No hierarchy, no sub-sheets, no simulation, no timing analysis, no certification. It suits documentation, teaching, and schematics rather than large engineering designs.
+- **The model is flat underneath.** Sub-circuits are expanded into ordinary parts before anything else reads the document, so the netlist, the SVG and the decompiler all see the flattened drawing — there are no sub-sheets, no ports between pages, no simulation, no timing analysis, and no certification. It suits documentation, teaching, and schematics rather than large engineering designs.
 - **Compiling source you did not write?** Pass [`limits`](https://schemd.johnowolabiidogun.dev/docs/0.7/limits) and a timeout of your own.
 - **Published performance figures are narrow.** Warm medians on one machine. Run `bun run benchmark` on yours.
 

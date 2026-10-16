@@ -53,7 +53,16 @@ const BUDGETS = [
 		 * Trunks cannot tree-shake out of this budget because `trunk` is syntax:
 		 * every document is parsed by the code that resolves it.
 		 */
-		maxGzipBytes: 36 * 1024
+		/*
+		 * 38 KiB from 36 for sub-circuits: about 1,400 B of expansion — renaming,
+		 * offsetting, parameter binding, and resolving exposed terminals through
+		 * nested instances — and 684 B for the twenty-one diagnostics that name
+		 * which block, instance, parameter or terminal is wrong and what to write
+		 * instead. Measured by stubbing the sentences in a scratch tree. Like
+		 * trunks, `subcircuit` is syntax, so it is carried by every host that
+		 * parses; a document that defines none skips the pass after one scan.
+		 */
+		maxGzipBytes: 38 * 1024
 	},
 	{
 		label: 'Package bundle (every public export)',
@@ -61,8 +70,8 @@ const BUDGETS = [
 		entry: (path) => `import * as schemd from ${JSON.stringify(path)};globalThis.schemd=schemd;`,
 		/* 37 KiB from 35 in 0.5, for the same two features plus their exported types. */
 		/* 39 KiB from 37 after 0.7: the 116 B left over could not hold trunks, and
-		   the decompiler reads them back too. */
-		maxGzipBytes: 39 * 1024
+		   the decompiler reads them back too. 41 KiB from 39 for sub-circuits. */
+		maxGzipBytes: 41 * 1024
 	}
 ];
 

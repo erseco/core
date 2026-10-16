@@ -1934,6 +1934,353 @@ function parsePlacementClause(rest: string): {
 	}
 }
 
+/** One declaration line after sub-circuit expansion, with the line that wrote it. */
+interface SourceLine {
+	readonly text: string;
+	readonly line: number;
+}
+
+/** Opens a definition: `subcircuit NAME [parameters] {`. */
+const SUBCIRCUIT_HEADER_PATTERN = /^subcircuit\s+([A-Za-z][A-Za-z0-9_-]*)\s*(?:\[(.*)\])?\s*\{$/;
+/** Places one: `NAME:ID at (x, y) [parameters]`. */
+const SUBCIRCUIT_INSTANCE_PATTERN =
+	/^([A-Za-z][A-Za-z0-9_-]*):([A-Za-z][A-Za-z0-9_-]*)\s+at\s+\((-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)\s*(?:\[(.*)\])?$/;
+/** Names one inner terminal as a terminal of every instance: `expose NAME = ID.port`. */
+const SUBCIRCUIT_EXPOSE_PATTERN =
+	/^expose\s+([A-Za-z][A-Za-z0-9_+-]*)\s*=\s*([A-Za-z][A-Za-z0-9_-]*)\.([A-Za-z][A-Za-z0-9_+-]*)$/;
+/** `name`, `name=value` or `name="value with spaces"`, as connection options are written. */
+const SUBCIRCUIT_PARAMETER_PATTERN = /^([A-Za-z][A-Za-z0-9_-]*)(?:=(?:"([^"]*)"|([^\s"]+)))?$/;
+/** Double braces, so a math label's `V_{out}` is never read as a parameter. */
+const SUBCIRCUIT_PLACEHOLDER_PATTERN = /\{\{([A-Za-z][A-Za-z0-9_-]*)\}\}/g;
+
+/** A definition as written: its parameters, with `undefined` for required ones, and its body. */
+interface SubcircuitDefinition {
+	readonly line: number;
+	readonly parameters: ReadonlyMap<string, string | undefined>;
+	readonly body: readonly SourceLine[];
+	used: boolean;
+}
+
+/** Read `name="value"` pairs; a bare `name` declares a required parameter. */
+function parseSubcircuitParameters(
+	raw: string | undefined,
+	line: number,
+	requireValues: boolean
+): Map<string, string | undefined> {
+	const parameters = new Map<string, string | undefined>();
+	if (raw === undefined || raw.trim() === '') return parameters;
+	if ((raw.match(/"/g)?.length ?? 0) % 2 !== 0) {
+		throw new SchematicSyntaxError('Subcircuit parameters have an unclosed quote.', line);
+	}
+	for (const token of connectionOptionTokens(raw.trim(), line)) {
+		const match = token.match(SUBCIRCUIT_PARAMETER_PATTERN);
+		if (match === null) {
+			throw new SchematicSyntaxError(
+				`Subcircuit parameters are written name="value"; ${token} is not one.`,
+				line
+			);
+		}
+		const name = match[1]!;
+		if (parameters.has(name)) {
+			throw new SchematicSyntaxError(`Subcircuit parameter ${name} is set twice.`, line);
+		}
+		const value = match[2] ?? match[3];
+		if (requireValues && value === undefined) {
+			throw new SchematicSyntaxError(`Parameter ${name} needs a value: ${name}="...".`, line);
+		}
+		parameters.set(name, value);
+	}
+	return parameters;
+}
+
+/** Rebuild a relation clause with every reference passed through `rename`. */
+function placementClause(
+	relations: readonly SchematicPlacementRelation[],
+	rename: (relation: SchematicPlacementRelation) => string
+): string {
+	return relations
+		.map((relation) =>
+			relation.kind === 'aligned-x' || relation.kind === 'aligned-y'
+				? `${relation.kind} with ${rename(relation)}`
+				: `${relation.kind} ${rename(relation)}${relation.gap === undefined ? '' : ` by ${relation.gap}`}`
+		)
+		.join(' ');
+}
+
+/**
+ * Lower sub-circuit definitions and instances to ordinary declarations.
+ *
+ * A sub-circuit is written once and placed many times. Like relative placement,
+ * it is lowered before anything else reads the document, so the AST stays flat
+ * and every later pass — validation, routing, the netlist, the renderer, the
+ * source map — sees only components and connections it already understands.
+ *
+ * Each instance copies its definition's body with every inner id prefixed by the
+ * instance id and an underscore (`U1` places `RT` as `U1_RT`), absolute
+ * coordinates offset by the instance's position, relative placements re-pointed
+ * at the prefixed ids, and `{{name}}` replaced by the instance's parameter.
+ * Copied lines keep the line number of the definition line that wrote them, so a
+ * diagnostic about a body declaration points at the declaration. Instances may
+ * nest; a definition that contains itself, directly or not, is refused.
+ *
+ * Outside, an instance is addressed through the terminals its definition
+ * exposes: `U1.mid` in a connection or a relation is rewritten to the inner
+ * terminal `expose mid = RT.out` named. That runs after every instance is
+ * expanded, because a connection may name an instance declared further down.
+ *
+ * The expanded text is held to the same `sourceCharacters` budget as the source:
+ * an instance is shorthand for the declarations it stands for, and nesting would
+ * otherwise turn a short document into an unbounded one.
+ *
+ * @param source - Raw source lines.
+ * @param characterLimit - Budget for the expanded declarations.
+ * @returns Declarations in reading order, each with the line that wrote it.
+ */
+function expandSubcircuits(source: readonly string[], characterLimit: number): SourceLine[] {
+	const definitions = new Map<string, SubcircuitDefinition>();
+	const top: SourceLine[] = [];
+	let open:
+		| { name: string; line: number; parameters: Map<string, string | undefined>; body: SourceLine[] }
+		| undefined;
+	for (const [index, raw] of source.entries()) {
+		const text = raw.trim();
+		const line = index + 1;
+		const header = text.match(SUBCIRCUIT_HEADER_PATTERN);
+		if (header !== null) {
+			const name = header[1]!;
+			if (open !== undefined) {
+				throw new SchematicSyntaxError(
+					`Subcircuit ${name} is declared inside subcircuit ${open.name}; close ${open.name} with } first. Definitions do not nest, though instances may.`,
+					line
+				);
+			}
+			if (includesValue(COMPONENT_KINDS, name)) {
+				throw new SchematicSyntaxError(
+					`Subcircuit ${name} would shadow the built-in ${name} component; choose another name.`,
+					line
+				);
+			}
+			const existing = definitions.get(name);
+			if (existing !== undefined) {
+				throw new SchematicSyntaxError(
+					`Subcircuit ${name} is already declared on line ${existing.line}.`,
+					line
+				);
+			}
+			open = { name, line, parameters: parseSubcircuitParameters(header[2], line, false), body: [] };
+		} else if (open === undefined) {
+			top.push({ text, line });
+		} else if (text === '}') {
+			definitions.set(open.name, { line: open.line, parameters: open.parameters, body: open.body, used: false });
+			open = undefined;
+		} else {
+			open.body.push({ text, line });
+		}
+	}
+	if (open !== undefined) {
+		throw new SchematicSyntaxError(
+			`Subcircuit ${open.name} is never closed; end it with a line holding only }.`,
+			open.line
+		);
+	}
+
+	/** Instance id → definition name, for every instance at every depth. */
+	const instances = new Map<string, string>();
+	/** `instance.terminal` → the prefixed inner endpoint it names. */
+	const exposures = new Map<string, { readonly id: string; readonly port: string }>();
+	const output: SourceLine[] = [];
+	let characters = 0;
+	const emit = (text: string, line: number): void => {
+		characters += text.length;
+		if (characters > characterLimit) {
+			throw new SchematicSyntaxError(
+				`Expanding subcircuits produces more than the ${characterLimit.toLocaleString('en-US')} character source limit; place fewer instances, or raise limits.sourceCharacters.`,
+				line
+			);
+		}
+		output.push({ text, line });
+	};
+	const expand = (
+		lines: readonly SourceLine[],
+		prefix: string,
+		dx: number,
+		dy: number,
+		values: ReadonlyMap<string, string>,
+		stack: readonly string[]
+	): void => {
+		for (const source of lines) {
+			const line = source.line;
+			const text =
+				prefix === ''
+					? source.text
+					: source.text.replace(SUBCIRCUIT_PLACEHOLDER_PATTERN, (_, key: string) => {
+							const value = values.get(key);
+							if (value === undefined) {
+								throw new SchematicSyntaxError(
+									`{{${key}}} is not a parameter of subcircuit ${stack.at(-1)}; declare it in the header as ${key}="default".`,
+									line
+								);
+							}
+							return value;
+						});
+			const kind = text.match(/^([A-Za-z][A-Za-z0-9_-]*):/)?.[1];
+			const definition = kind === undefined ? undefined : definitions.get(kind);
+			if (definition !== undefined) {
+				const instance = text.match(SUBCIRCUIT_INSTANCE_PATTERN);
+				if (instance === null) {
+					throw new SchematicSyntaxError(
+						`Place subcircuit ${kind} as ${kind}:ID at (x, y), optionally followed by [name="value"]; an instance has no label or colour of its own.`,
+						line
+					);
+				}
+				const id = prefix + instance[2]!;
+				if (stack.includes(kind!)) {
+					throw new SchematicSyntaxError(
+						`Subcircuit ${kind} contains itself through ${[...stack.slice(stack.indexOf(kind!)), kind].join(' -> ')}; a subcircuit cannot contain itself.`,
+						line
+					);
+				}
+				if (instances.has(id)) throw new SchematicSyntaxError(`Duplicate component ID ${id}.`, line);
+				const supplied = parseSubcircuitParameters(instance[5], line, true);
+				const bound = new Map<string, string>();
+				for (const [parameter, fallback] of definition.parameters) {
+					const value = supplied.get(parameter) ?? fallback;
+					if (value === undefined) {
+						throw new SchematicSyntaxError(
+							`${id} must set ${parameter}: subcircuit ${kind} declares it without a default.`,
+							line
+						);
+					}
+					bound.set(parameter, value);
+				}
+				for (const parameter of supplied.keys()) {
+					if (!definition.parameters.has(parameter)) {
+						throw new SchematicSyntaxError(
+							`Subcircuit ${kind} has no parameter ${parameter}; it declares ${definition.parameters.size === 0 ? 'none' : [...definition.parameters.keys()].join(', ')}.`,
+							line
+						);
+					}
+				}
+				instances.set(id, kind!);
+				definition.used = true;
+				expand(definition.body, `${id}_`, dx + Number(instance[3]), dy + Number(instance[4]), bound, [...stack, kind!]);
+				continue;
+			}
+			const exposure = text.match(SUBCIRCUIT_EXPOSE_PATTERN);
+			if (exposure !== null) {
+				if (prefix === '') {
+					throw new SchematicSyntaxError('expose only belongs inside a subcircuit definition.', line);
+				}
+				const key = `${prefix.slice(0, -1)}.${exposure[1]}`;
+				if (exposures.has(key)) {
+					throw new SchematicSyntaxError(
+						`Subcircuit ${stack.at(-1)} exposes ${exposure[1]} twice.`,
+						line
+					);
+				}
+				exposures.set(key, { id: prefix + exposure[2], port: exposure[3]! });
+				continue;
+			}
+			if (prefix === '') {
+				emit(text, line);
+				continue;
+			}
+			const component = text.match(COMPONENT_PATTERN);
+			if (component !== null) {
+				const x = Math.round((Number(component[4]) + dx) * 1000) / 1000;
+				const y = Math.round((Number(component[5]) + dy) * 1000) / 1000;
+				emit(
+					`${component[1]}:${prefix}${component[2]} "${component[3]}" at (${x}, ${y}) ${component[6]}`,
+					line
+				);
+				continue;
+			}
+			const head = text.match(COMPONENT_HEAD_PATTERN);
+			const placement = head === null ? undefined : parsePlacementClause(head[4]!);
+			if (placement !== undefined && placement.relations.length > 0 && placement.tail !== '') {
+				const clause = placementClause(
+					placement.relations,
+					(relation) => `${prefix}${relation.ref}${relation.port === undefined ? '' : `.${relation.port}`}`
+				);
+				emit(`${head![1]}:${prefix}${head![2]} "${head![3]}" ${clause} ${placement.tail}`, line);
+				continue;
+			}
+			const connection = text.match(CONNECTION_PATTERN);
+			if (connection !== null) {
+				emit(
+					`${prefix}${connection[1]}.${connection[2]} -> ${prefix}${connection[3]}.${connection[4]} ${connection[5]}`,
+					line
+				);
+				continue;
+			}
+			/* Anything else is left for the declaration parser, which reports it
+			   against the body line that wrote it. */
+			emit(text, line);
+		}
+	};
+	expand(top, '', 0, 0, new Map(), []);
+	for (const [name, definition] of definitions) {
+		if (!definition.used) {
+			throw new SchematicSyntaxError(
+				`Subcircuit ${name} is declared but never placed; add ${name}:ID at (x, y), or remove it.`,
+				definition.line
+			);
+		}
+	}
+
+	/** Follow `U1.mid` through each level of nesting to the terminal it names. */
+	const terminal = (id: string, port: string, line: number): string => {
+		while (instances.has(id)) {
+			const target = exposures.get(`${id}.${port}`);
+			if (target === undefined) {
+				const offered = [...exposures.keys()]
+					.filter((key) => key.startsWith(`${id}.`))
+					.map((key) => key.slice(id.length + 1));
+				throw new SchematicSyntaxError(
+					`${id} is a ${instances.get(id)} subcircuit, which exposes ${offered.length === 0 ? 'no terminals' : offered.join(', ')}; it has no terminal ${port}.`,
+					line
+				);
+			}
+			id = target.id;
+			port = target.port;
+		}
+		return `${id}.${port}`;
+	};
+	return output.map((source) => {
+		const connection = source.text.match(CONNECTION_PATTERN);
+		if (connection !== null) {
+			if (!instances.has(connection[1]!) && !instances.has(connection[3]!)) return source;
+			return {
+				text: `${terminal(connection[1]!, connection[2]!, source.line)} -> ${terminal(connection[3]!, connection[4]!, source.line)} ${connection[5]}`,
+				line: source.line
+			};
+		}
+		const head = source.text.match(COMPONENT_HEAD_PATTERN);
+		if (head === null) return source;
+		if (instances.has(head[2]!)) {
+			throw new SchematicSyntaxError(
+				`${head[2]} names both a component and a subcircuit instance; rename one of them.`,
+				source.line
+			);
+		}
+		const placement = parsePlacementClause(head[4]!);
+		if (!placement.relations.some((relation) => instances.has(relation.ref))) return source;
+		const clause = placementClause(placement.relations, (relation) => {
+			if (!instances.has(relation.ref)) {
+				return `${relation.ref}${relation.port === undefined ? '' : `.${relation.port}`}`;
+			}
+			if (relation.port === undefined) {
+				throw new SchematicSyntaxError(
+					`Place ${head[2]} relative to a terminal of ${relation.ref}, such as ${relation.kind} ${relation.ref}.TERMINAL; a subcircuit instance has no body of its own to measure from.`,
+					source.line
+				);
+			}
+			return terminal(relation.ref, relation.port, source.line);
+		});
+		return { text: `${head[1]}:${head[2]} "${head[3]}" ${clause} ${placement.tail}`, line: source.line };
+	});
+}
+
 /**
  * Compile validated schemd DSL source into an immutable schematic AST.
  *
@@ -1959,10 +2306,14 @@ export function parseSchematic(source: string, fence: SchematicFence): Schematic
 	const connections: SchematicConnection[] = [];
 	const componentIds = new Set<string>();
 	const pendingPlacements: PendingPlacement[] = [];
-	for (const [lineIndex, rawLine] of source.replace(/\r\n?/g, '\n').split('\n').entries()) {
-		const line = rawLine.trim();
+	const sourceLines = source.replace(/\r\n?/g, '\n').split('\n');
+	/* Only a document that defines a subcircuit pays for the expansion pass. */
+	const declarations = sourceLines.some((line) => SUBCIRCUIT_HEADER_PATTERN.test(line.trim()))
+		? expandSubcircuits(sourceLines, limits.sourceCharacters)
+		: sourceLines.map((text, index) => ({ text, line: index + 1 }));
+	for (const { text, line: lineNumber } of declarations) {
+		const line = text.trim();
 		if (line === '' || line.startsWith('//')) continue;
-		const lineNumber = lineIndex + 1;
 		const componentMatch = line.match(COMPONENT_PATTERN);
 		if (componentMatch) {
 			if (components.length >= limits.components) {

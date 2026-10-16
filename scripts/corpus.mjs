@@ -209,6 +209,97 @@ function modeDocuments() {
 }
 
 /**
+ * Trunk branches and sub-circuits, which both draw a document differently from
+ * the declarations it would otherwise be read as. Recorded after both were
+ * added, so every document above keeps the digest it had before them.
+ */
+function hierarchyDocuments() {
+	const fanOut = [
+		'source:VIN "5 V" at (100, 260) #blue [type=voltage-dc]',
+		'resistor:R1 "1 k" at (420, 100) #amber',
+		'resistor:R2 "2 k" at (420, 220) #amber',
+		'resistor:R3 "3 k" at (420, 340) #amber',
+		'resistor:R4 "4 k" at (420, 460) #amber',
+		'VIN.positive -> R1.in #blue [ortho]',
+		'VIN.positive -> R2.in #blue [ortho trunk]',
+		'VIN.positive -> R3.in #blue [ortho trunk]',
+		'VIN.positive -> R4.in #blue [ortho trunk]'
+	].join('\n');
+	const divider = [
+		'subcircuit divider [top="10 k" bottom="10 k"] {',
+		'  resistor:RT "{{top}}" at (0, 0) #amber [orientation=down]',
+		'  resistor:RB "{{bottom}}" below RT by 40 #amber [orientation=down]',
+		'  RT.out -> RB.in #amber [ortho]',
+		'  expose top = RT.in',
+		'  expose mid = RT.out',
+		'  expose gnd = RB.out',
+		'}'
+	].join('\n');
+	const fence = { bounds: { width: 800, height: 560 }, title: 'hierarchy' };
+	const documents = SCHEMD_OUTPUT_MODES.map((mode) => ({ name: `trunk/fan-out/${mode}`, source: fanOut, fence, mode }));
+	documents.push(
+		{
+			name: 'trunk/fan-in',
+			source: [
+				'resistor:R1 "a" at (150, 100) #amber',
+				'resistor:R2 "b" at (150, 300) #amber',
+				'junction:J "j" at (450, 200) #blue',
+				'R1.out -> J.node #blue [ortho]',
+				'R2.out -> J.node #blue [ortho trunk]'
+			].join('\n'),
+			fence,
+			mode: 'full'
+		},
+		{
+			name: 'subcircuit/pair',
+			source: `${divider}\ndivider:U1 at (200, 100)\ndivider:U2 at (500, 100) [bottom="4.7 k"]\nU1.mid -> U2.top #blue [ortho]`,
+			fence,
+			mode: 'full'
+		},
+		{
+			name: 'subcircuit/nested',
+			source: [
+				'subcircuit leg [tone=amber] {',
+				'  resistor:R "leg" at (0, 0) #{{tone}}',
+				'  expose a = R.in',
+				'  expose b = R.out',
+				'}',
+				'subcircuit pair {',
+				'  leg:L at (0, 0)',
+				'  leg:M at (0, 100) [tone=emerald]',
+				'  L.b -> M.b #amber [ortho]',
+				'  expose in = L.a',
+				'}',
+				'pair:P at (300, 150)',
+				'source:V "V" at (100, 150) #blue',
+				'V.positive -> P.in #blue [ortho]'
+			].join('\n'),
+			fence,
+			mode: 'full'
+		},
+		{
+			name: 'diagnostic/trunk-without-copper',
+			source: 'resistor:R1 "a" at (150, 100) #amber\nresistor:R2 "b" at (450, 100) #amber\nR1.out -> R2.in #blue [ortho trunk]',
+			fence,
+			mode: 'full'
+		},
+		{
+			name: 'diagnostic/subcircuit-cycle',
+			source: 'subcircuit a {\n  b:B at (0, 0)\n}\nsubcircuit b {\n  a:A at (0, 0)\n}\na:Top at (100, 100)',
+			fence,
+			mode: 'full'
+		},
+		{
+			name: 'diagnostic/subcircuit-terminal',
+			source: `${divider}\ndivider:U1 at (200, 100)\nresistor:X "x" at (600, 100) #amber\nU1.bias -> X.in #blue [ortho]`,
+			fence,
+			mode: 'full'
+		}
+	);
+	return documents;
+}
+
+/**
  * Documents that must be *rejected*.
  *
  * A refactor that changed one of these from an error to a compile — or merely
@@ -252,7 +343,8 @@ export function corpusDocuments() {
 		...randomGridDocuments(),
 		...placementDocuments(),
 		...modeDocuments(),
-		...diagnosticDocuments()
+		...diagnosticDocuments(),
+		...hierarchyDocuments()
 	];
 }
 
