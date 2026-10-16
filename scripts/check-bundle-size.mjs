@@ -44,7 +44,7 @@ const BUDGETS = [
 		 * rather than to chase it.
 		 */
 		/*
-		 * 36 KiB from 35 after 0.7. The edge-price cache is 127 B. Trunk branches
+		 * 36 KiB from 35 in 0.8. The edge-price cache is 127 B. Trunk branches
 		 * are about 1,150 B: roughly 800 of routing, anchoring and junction drawing,
 		 * and 355 of the five diagnostics that say which end joins the net and how
 		 * to fix a branch with nothing to tap. Stubbing those sentences out was
@@ -54,7 +54,7 @@ const BUDGETS = [
 		 * every document is parsed by the code that resolves it.
 		 */
 		/*
-		 * 38 KiB from 36 for sub-circuits: about 1,400 B of expansion — renaming,
+		 * 38 KiB from 36 in 0.8, for sub-circuits: about 1,400 B of expansion — renaming,
 		 * offsetting, parameter binding, and resolving exposed terminals through
 		 * nested instances — and 684 B for the twenty-one diagnostics that name
 		 * which block, instance, parameter or terminal is wrong and what to write
@@ -69,8 +69,8 @@ const BUDGETS = [
 		module: '../src/index.ts',
 		entry: (path) => `import * as schemd from ${JSON.stringify(path)};globalThis.schemd=schemd;`,
 		/* 37 KiB from 35 in 0.5, for the same two features plus their exported types. */
-		/* 39 KiB from 37 after 0.7: the 116 B left over could not hold trunks, and
-		   the decompiler reads them back too. 41 KiB from 39 for sub-circuits. */
+		/* 39 KiB from 37 in 0.8: the 116 B left over could not hold trunks, and
+		   the decompiler reads them back too. 41 KiB from 39 in 0.8, for sub-circuits. */
 		maxGzipBytes: 41 * 1024
 	}
 ];
