@@ -61,6 +61,12 @@ export interface RoutedConnection {
 	d: string;
 	/** At least two absolute points spanning endpoints, controls, corners, and bridge extrema. */
 	points: readonly [SchematicPoint, SchematicPoint, ...SchematicPoint[]];
+	/**
+	 * Where a `trunk` branch leaves its net's copper, when that is the trace's
+	 * first point. A branch that joins at its last point needs no field: the
+	 * endpoint dot every signal wire ends in already marks the junction.
+	 */
+	readonly junction?: SchematicPoint;
 }
 
 /** One non-degenerate horizontal or vertical segment in a routed trace. */
@@ -2517,6 +2523,163 @@ function routeConnectionInternal(
 	);
 }
 
+/** Nearest taps a trunk branch tries before it is reported unroutable. */
+const TRUNK_TAP_CANDIDATES = 8;
+
+/**
+ * Closest a junction may sit to a terminal along the wire it taps.
+ *
+ * Without it the nearest point of a neighbouring wire is usually its terminal
+ * stub, and the junction dot lands a few units from that terminal's own dot —
+ * two dots a reader cannot tell apart. Two channel pitches clears the stub.
+ */
+const TRUNK_STANDOFF = ROUTER_CHANNEL_PITCH * 2;
+
+/** Whether `point` lies on the closed axis-aligned span from `start` to `end`. */
+function onAxisSpan(point: SchematicPoint, start: SchematicPoint, end: SchematicPoint): boolean {
+	return (
+		point.x >= Math.min(start.x, end.x) &&
+		point.x <= Math.max(start.x, end.x) &&
+		point.y >= Math.min(start.y, end.y) &&
+		point.y <= Math.max(start.y, end.y)
+	);
+}
+
+/**
+ * Route a `trunk` connection from the nearest copper its net already has.
+ *
+ * A net reaching four terminals used to be drawn as three wires that each ran
+ * back to the shared pin, side by side or on top of one another. Every point on
+ * a net's copper is the same electrical node, so a branch may leave from any of
+ * them: this taps the placed same-net segment nearest the terminal the branch
+ * reaches out to, and the result is the tree a draughtsman would draw, with a
+ * junction dot where each branch joins.
+ *
+ * This is the sequential maze-routing approximation to a rectilinear Steiner
+ * tree — each branch connects to the tree built so far — rather than an optimal
+ * one, and it inherits the greedy router's order sensitivity. The tap is the
+ * closest point of each segment to the branch's escape point; candidates are
+ * tried nearest first, with ties left in route-then-segment order by the stable
+ * sort, so the choice is a function of the document alone.
+ *
+ * Under rip-up a branch can be placed before anything else on its net. It then
+ * routes to its own terminal like any other trace, which is a legal drawing of
+ * the same connectivity, and later branches tap it.
+ *
+ * @param routes - Routes placed so far in this pass, indexed by source order.
+ */
+function routeTrunkBranch(
+	connection: SchematicConnection,
+	connections: readonly SchematicConnection[],
+	routes: readonly (RoutedConnection | undefined)[],
+	components: ReadonlyMap<string, SchematicComponent>,
+	bounds: SchematicBounds | undefined,
+	index: RoutingIndex
+): RoutedConnection {
+	const fromAnchored = connection.trunk === 'from';
+	const anchorId = (fromAnchored ? connection.from : connection.to).componentId;
+	const reached = fromAnchored ? connection.to : connection.from;
+	const free = endpointGeometry(reached, components);
+	const target = escapePoint(free, componentObstacleRectangle(free.component));
+	const taps: {
+		readonly point: SchematicPoint;
+		readonly horizontal: boolean;
+		readonly distance: number;
+	}[] = [];
+	/** Every orthogonal span the net already has, which a branch may run along. */
+	const copper: (readonly [SchematicPoint, SchematicPoint])[] = [];
+	const alongCopper = (points: readonly SchematicPoint[]): boolean =>
+		copper.some(
+			([start, end]) => onAxisSpan(points[0]!, start, end) && onAxisSpan(points[1]!, start, end)
+		);
+	for (let other = 0; other < routes.length; other += 1) {
+		const route = routes[other];
+		/* The branch's own slot is still empty: a pass records a route only
+		   after placing it, so `undefined` also excludes the branch itself. */
+		if (
+			route === undefined ||
+			route.curve !== 'ortho' ||
+			!connectionsShareNet(connection, connections[other]!)
+		) {
+			continue;
+		}
+		const branch = connections[other]!.trunk;
+		for (let corner = 1; corner < route.points.length; corner += 1) {
+			const start = route.points[corner - 1]!;
+			const end = route.points[corner]!;
+			copper.push([start, end]);
+			/* Hold the tap off any end of this span that is a terminal. A branch's
+			   joining end is a tap rather than a terminal, so it needs no margin. */
+			const length = Math.abs(end.x - start.x) + Math.abs(end.y - start.y);
+			const low = corner === 1 && branch !== 'from' ? TRUNK_STANDOFF : 0;
+			const high = corner === route.points.length - 1 && branch !== 'to' ? TRUNK_STANDOFF : 0;
+			if (low + high >= length) continue;
+			const ux = Math.sign(end.x - start.x);
+			const uy = Math.sign(end.y - start.y);
+			const first = { x: start.x + ux * low, y: start.y + uy * low };
+			const last = { x: end.x - ux * high, y: end.y - uy * high };
+			const point = {
+				x: Math.min(Math.max(target.x, Math.min(first.x, last.x)), Math.max(first.x, last.x)),
+				y: Math.min(Math.max(target.y, Math.min(first.y, last.y)), Math.max(first.y, last.y))
+			};
+			taps.push({
+				point,
+				horizontal: start.y === end.y,
+				distance: Math.abs(point.x - target.x) + Math.abs(point.y - target.y)
+			});
+		}
+	}
+	if (taps.length === 0) return routeConnectionInternal(connection, components, bounds, index);
+	taps.sort((left, right) => left.distance - right.distance);
+	const obstacles = routingRectangles(index, anchorId, free.component.id);
+	for (const tap of taps.slice(0, TRUNK_TAP_CANDIDATES)) {
+		/*
+		 * A clean L off the trunk first, leaving perpendicular to the tapped span.
+		 * The general search opens with a dogleg through the midpoint, which is the
+		 * right first guess between two terminals and a visible kink when one end
+		 * is a point on a wire. An L that would set off along copper is passed
+		 * over, because its junction would not be where it appears to be.
+		 */
+		let middle: SchematicPoint[] | undefined;
+		const vertical = { x: tap.point.x, y: target.y };
+		const horizontal = { x: target.x, y: tap.point.y };
+		for (const corner of tap.horizontal ? [vertical, horizontal] : [horizontal, vertical]) {
+			const shape = compactOrthogonalPoints([tap.point, corner, target]);
+			if (
+				!alongCopper(shape) &&
+				!routeIntersectsObstacles(shape, index, anchorId, free.component.id) &&
+				routeOccupancyCost(shape, index, connection) === 0
+			) {
+				middle = shape;
+				break;
+			}
+		}
+		middle ??= routeBetweenEscapes(tap.point, target, obstacles, index, connection, bounds);
+		if (middle === undefined) continue;
+		const points = compactOrthogonalPoints([...middle, free.point]);
+		/* A branch that sets off along the net's copper is still on it: the
+		   junction is where it actually leaves, so slide it there. */
+		while (points.length > 2 && alongCopper(points)) points.shift();
+		if (!fromAnchored) points.reverse();
+		const route = validateMarkerCollisions(
+			connection,
+			{
+				curve: 'ortho',
+				d: orthogonalPath(points),
+				points: points as [SchematicPoint, SchematicPoint, ...SchematicPoint[]]
+			},
+			index,
+			connection.from.componentId,
+			connection.to.componentId
+		);
+		return fromAnchored ? { ...route, junction: points[0]! } : route;
+	}
+	throw new SchematicSyntaxError(
+		`No orthogonal route from net ${connection.netId}'s copper to ${reached.componentId}.${reached.port} clears every component and earlier trace: move ${reached.componentId} closer to the trunk, widen the fence bounds, or drop trunk to route from the terminal itself.`,
+		connection.line
+	);
+}
+
 /**
  * Calculate a deterministic line, cubic Bézier, or orthogonal trace.
  *
@@ -2909,7 +3072,8 @@ function bridgedOrthogonalPath(
 	return {
 		curve: route.curve,
 		d: path,
-		points: boundsPoints as [SchematicPoint, SchematicPoint, ...SchematicPoint[]]
+		points: boundsPoints as [SchematicPoint, SchematicPoint, ...SchematicPoint[]],
+		...(route.junction === undefined ? {} : { junction: route.junction })
 	};
 }
 
@@ -3056,7 +3220,11 @@ function routeNudgedBundle(
 ): { readonly routes: RoutedConnection[]; readonly index: RoutingIndex } | undefined {
 	/* No guard on bundle size: the caller reaches this only when a trace failed
 	   with at least one placed before it, so a bundle is never shorter than two. */
-	if (connections.some((connection) => connection.curve !== 'ortho')) return undefined;
+	/* A trunk branch's shape is decided by the copper it taps, which a bundle
+	   laid out as one set does not have, so a document with one is not nudged. */
+	if (connections.some((connection) => connection.curve !== 'ortho' || connection.trunk !== undefined)) {
+		return undefined;
+	}
 
 	/* Escape points are where the shape actually begins; the terminal stub in
 	   front of them is reserved for every trace before any is placed. */
@@ -3253,7 +3421,10 @@ function routeWithRipUp(
 				   crossing pass and the contact rules key on it to decide whether two
 				   traces share a net, and a permuted identity would silently rewrite
 				   which pairs are allowed to touch. */
-				const route = routeConnectionInternal(connection, components, bounds, index);
+				const route =
+					connection.trunk === undefined
+						? routeConnectionInternal(connection, components, bounds, index)
+						: routeTrunkBranch(connection, connections, routes, components, bounds, index);
 				routes[original] = route;
 				indexCompletedRoute(index, route, connection, original);
 			} catch (error) {

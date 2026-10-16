@@ -221,8 +221,8 @@ const mutants = [
 	{
 		name: 'a mixed-curve bundle is never nudged',
 		file: 'src/layout.ts',
-		from: "\tif (connections.some((connection) => connection.curve !== 'ortho')) return undefined;",
-		to: "\tif (connections.some((connection) => connection.curve === 'never')) return undefined;",
+		from: "connections.some((connection) => connection.curve !== 'ortho' || connection.trunk !== undefined)",
+		to: "connections.some((connection) => connection.curve === 'never' || connection.trunk !== undefined)",
 		tests: ['tests/nudging.test.ts']
 	},
 	{
@@ -367,6 +367,62 @@ const mutants = [
 		from: 'const slot = (forward ? currentCell : nextY * width + nextX) * 2 + (direction - 1);',
 		to: 'const slot = currentCell * 2 + (direction - 1);',
 		tests: ['tests/router-arena.test.ts']
+	},
+	/*
+	 * Trunk branches. Each of these leaves a drawing that still compiles — which
+	 * is exactly why each needs a mutant: a branch tapping another net, a dot
+	 * beside a terminal dot, a junction drawn where the branch does not leave,
+	 * or a midpoint kink all look like plausible output to a test that only
+	 * checks for an SVG.
+	 */
+	{
+		name: 'a trunk branch taps only its own net',
+		file: 'src/layout.ts',
+		from: '\t\t\t!connectionsShareNet(connection, connections[other]!)\n',
+		to: '\t\t\tfalse\n',
+		tests: ['tests/trunk.test.ts']
+	},
+	{
+		name: 'a junction is held off the terminals of the wire it taps',
+		file: 'src/layout.ts',
+		from: 'const TRUNK_STANDOFF = ROUTER_CHANNEL_PITCH * 2;',
+		to: 'const TRUNK_STANDOFF = 0;',
+		tests: ['tests/trunk.test.ts']
+	},
+	{
+		name: 'a junction slides to where the branch leaves the net',
+		file: 'src/layout.ts',
+		from: 'while (points.length > 2 && alongCopper(points)) points.shift();',
+		to: 'while (false) points.shift();',
+		tests: ['tests/trunk.test.ts']
+	},
+	{
+		name: 'a branch tries a clean L off the trunk before the general search',
+		file: 'src/layout.ts',
+		from: '\t\t\t\tmiddle = shape;\n\t\t\t\tbreak;',
+		to: '\t\t\t\tbreak;',
+		tests: ['tests/trunk.test.ts']
+	},
+	{
+		name: 'an L that sets off along copper is passed over',
+		file: 'src/layout.ts',
+		from: '\t\t\t\t!alongCopper(shape) &&\n',
+		to: '',
+		tests: ['tests/trunk.test.ts']
+	},
+	{
+		name: 'a document with a trunk branch is never laid out as a bundle',
+		file: 'src/layout.ts',
+		from: "connections.some((connection) => connection.curve !== 'ortho' || connection.trunk !== undefined)",
+		to: "connections.some((connection) => connection.curve !== 'ortho')",
+		tests: ['tests/trunk.test.ts']
+	},
+	{
+		name: 'a branch joins the net at the end wired above it',
+		file: 'src/parser.ts',
+		from: "connection.trunk = fromWired ? 'from' : 'to';",
+		to: "connection.trunk = 'from';",
+		tests: ['tests/trunk.test.ts']
 	},
 	{
 		name: 'a family set is derived from the registry it classifies',

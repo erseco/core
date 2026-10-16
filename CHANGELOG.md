@@ -4,6 +4,14 @@ All notable changes to `@schemd/core` are recorded here. Dates describe actual n
 
 ## [Unreleased]
 
+### Added
+
+- **`trunk` draws a multi-terminal net as a tree.** A net reaching four terminals used to be three wires that each ran back to the shared pin — stacked on one another where the router reused a channel, and meeting at T-junctions with no dot, which a reader cannot tell from a crossing. Mark a connection `[ortho trunk]` and it leaves the nearest copper its net already has instead of its own terminal, with a junction dot where it joins. Every point on a net is the same electrical node, so the netlist, `verifyNetlist`, `describeSchematic` and the source map are unchanged; only the drawing is.
+- **Which end joins the net is decided by the source text.** A branch needs exactly one terminal already wired by a connection declared above it; that end becomes a tap and the other is the terminal the branch reaches. So `VIN.positive -> R3.in [ortho trunk]` fans out from VIN's copper, and `R2.out -> J.node [ortho trunk]` fans in to J's. The parser records the answer as `connection.trunk` (`'from'` or `'to'`) and refuses, with the line, a branch with neither or both ends wired, one on a `line`, `bezier` or UML connector, and a marker on the end that joins the net — there is no terminal there for it to sit on.
+- **The tree is the sequential Steiner approximation, not an optimal one.** Each branch taps the closest point of the copper placed so far to its own escape point, held two channel pitches off any terminal so its dot cannot crowd the terminal's, and prefers a clean L leaving the trunk perpendicular over the router's midpoint dogleg. The junction is drawn where the branch actually leaves the net: one that sets off along a wire before turning has its dot at the turn. Candidates are tried nearest first with ties in route-then-segment order, so the tree is a function of the document. Under rip-up a branch placed before anything else on its net routes from its terminal, which is a legal drawing of the same connectivity.
+- `full` mode stamps `data-wire-trunk="from|to"` on a branch's group, and `parseSchematicSvg` reads it back as `trunk: true` and writes `trunk` into recovered source, which recompiles to the same wires.
+- A document containing a branch is never laid out as a bundle: a branch's shape is decided by the copper it taps, which a bundle placed as one set does not have.
+
 ### Performance
 
 - **The sparse router prices each grid edge once per route.** A profile of a thirteen-wire bus put 57% of compile time in `indexedSegmentCollision` and `wireSegmentCost`, and most of those calls asked a question already answered: the search reaches an edge from both of its cells, and from each cell once per arrival direction, while the obstacles and placed wires it is priced against stay fixed for the whole search. The arena now keeps one price per undirected edge under the same generation stamp as its score columns, so a fresh route still costs one integer increment. Reversal buses compile 1.42–1.57× faster: twelve wires in 18.3 ms from 27.5, thirty-two in 61.0 ms from 86.4. Dense 16×16 routing never reaches the sparse search and is unchanged.
@@ -11,6 +19,9 @@ All notable changes to `@schemd/core` are recorded here. Dates describe actual n
 
 ### Verified
 
+- Seven mutants join the kill gate for trunks: a branch taps only its own net, a junction is held off the terminals of the wire it taps, a junction slides to where the branch leaves the net, a branch tries a clean L before the general search, an L that sets off along copper is passed over, a document with a branch is never laid out as a bundle, and a branch joins the net at the end wired above it. The first and sixth survived the suite as first written — a tap on a foreign net is already illegal by the contact rule, and the first bundle fixture failed for reasons of its own — and were killed by fixtures built to separate them: eight foreign wires nearer than the trunk, which would spend every tap attempt, and a thirteen-wire bus whose branch happens to fit the bundle's shape.
+- The pre-existing mutant `a mixed-curve bundle is never nudged` targets the guard trunks extended, and was re-pointed at the new line rather than retired.
+- Trunks are opt-in, and all 261 corpus documents are byte-identical.
 - Three mutants join the kill gate for the edge cache: a price must not survive into the next route, an edge must be keyed by its axis as well as its cell, and an edge must be keyed by its west or north cell rather than by whichever cell reached it. A test pins the SVG digests of the eight- and twelve-wire buses recorded from the uncached router.
 
 ## [0.7.0] - 2026-08-01

@@ -1121,7 +1121,7 @@ function connectionMarkup(
 	const traceId = `${idPrefix}-wire-${index}-vector`;
 	const signalKind = connection.signalKind ?? 'electrical';
 	const signalClass = connection.signalKind === undefined ? '' : ` schematic-signal--${signalKind}`;
-	const dataAttributes = ` data-wire-source="${source}" data-wire-target="${target}" data-source-line="${connection.line}"${connection.netId === undefined ? '' : ` data-net-id="${escapeXml(connection.netId)}"`}${connection.signalKind === undefined ? '' : ` data-signal-kind="${signalKind}"`}${connection.width === undefined ? '' : ` data-bus-width="${connection.width}"`}`;
+	const dataAttributes = ` data-wire-source="${source}" data-wire-target="${target}" data-source-line="${connection.line}"${connection.netId === undefined ? '' : ` data-net-id="${escapeXml(connection.netId)}"`}${connection.signalKind === undefined ? '' : ` data-signal-kind="${signalKind}"`}${connection.width === undefined ? '' : ` data-bus-width="${connection.width}"`}${connection.trunk === undefined ? '' : ` data-wire-trunk="${connection.trunk}"`}`;
 	/* v8 ignore next -- parsed documents always materialize relation; fallback preserves old typed ASTs. */
 	const relation = connection.relation ?? 'signal';
 	const accessibility = ` tabindex="0" role="group" aria-label="${escapeXml(relation)} from ${source} to ${target}"`;
@@ -1133,7 +1133,11 @@ function connectionMarkup(
 		relation === 'signal' && connection.markerEnd === 'none'
 			? `<circle ${colorAttributes(connection.color, 'schematic-node-fill')} cx="${svgNumber(end.x)}" cy="${svgNumber(end.y)}" r="3" />`
 			: '';
-	return `<g class="schematic-wire${signalClass}"${dataAttributes}${accessibility}>${markerCarrier}<path${vectorId} ${colorAttributes(connection.color, `schematic-trace${signalClass}`)} d="${visibleConnectionPath(connection, routed)}"${markerAttributes} />${glow}${endpoint}${connectionLabelMarkup(connection, routed)}</g>`;
+	const junction =
+		routed.junction === undefined
+			? ''
+			: `<circle ${colorAttributes(connection.color, 'schematic-node-fill schematic-junction')} cx="${svgNumber(routed.junction.x)}" cy="${svgNumber(routed.junction.y)}" r="3" />`;
+	return `<g class="schematic-wire${signalClass}"${dataAttributes}${accessibility}>${markerCarrier}<path${vectorId} ${colorAttributes(connection.color, `schematic-trace${signalClass}`)} d="${visibleConnectionPath(connection, routed)}"${markerAttributes} />${glow}${endpoint}${junction}${connectionLabelMarkup(connection, routed)}</g>`;
 }
 
 /**
@@ -1290,6 +1294,12 @@ function compactConnectionMarkup(
 		if ((connection.relation ?? 'signal') === 'signal' && connection.markerEnd === 'none') {
 			batch.endpoints.push(
 				`M ${svgNumber(end.x - 3)} ${svgNumber(end.y)} a 3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0`
+			);
+		}
+		/* A junction is the same dot as an endpoint, so it compounds with them. */
+		if (routed.junction !== undefined) {
+			batch.endpoints.push(
+				`M ${svgNumber(routed.junction.x - 3)} ${svgNumber(routed.junction.y)} a 3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0`
 			);
 		}
 		const label = connectionLabelMarkup(connection, routed);

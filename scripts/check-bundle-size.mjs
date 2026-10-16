@@ -43,14 +43,26 @@ const BUDGETS = [
 		 * gzip-efficiency floor, so the honest move is to record the cost here
 		 * rather than to chase it.
 		 */
-		maxGzipBytes: 35 * 1024
+		/*
+		 * 36 KiB from 35 after 0.7. The edge-price cache is 127 B. Trunk branches
+		 * are about 1,150 B: roughly 800 of routing, anchoring and junction drawing,
+		 * and 355 of the five diagnostics that say which end joins the net and how
+		 * to fix a branch with nothing to tap. Stubbing those sentences out was
+		 * measured rather than assumed, and is not an option this project takes —
+		 * a diagnostic that does not say how to fix the diagram is the defect.
+		 * Trunks cannot tree-shake out of this budget because `trunk` is syntax:
+		 * every document is parsed by the code that resolves it.
+		 */
+		maxGzipBytes: 36 * 1024
 	},
 	{
 		label: 'Package bundle (every public export)',
 		module: '../src/index.ts',
 		entry: (path) => `import * as schemd from ${JSON.stringify(path)};globalThis.schemd=schemd;`,
 		/* 37 KiB from 35 in 0.5, for the same two features plus their exported types. */
-		maxGzipBytes: 37 * 1024
+		/* 39 KiB from 37 after 0.7: the 116 B left over could not hold trunks, and
+		   the decompiler reads them back too. */
+		maxGzipBytes: 39 * 1024
 	}
 ];
 

@@ -689,6 +689,15 @@ export interface SchematicConnection {
 	netId?: string;
 	/** Validated bus/register width; absence denotes a scalar connection. */
 	width?: number;
+	/**
+	 * Parser-resolved end at which a `trunk` connection joins its net's copper.
+	 *
+	 * Absent unless the author wrote `trunk`. `'from'` means the source terminal
+	 * is already wired by an earlier connection, so the drawn trace leaves the
+	 * nearest wire of the same net instead of the source terminal itself; `'to'`
+	 * is the mirror image for the destination.
+	 */
+	trunk?: 'from' | 'to';
 	/** Optional text centered beside the routed connector. */
 	label?: string;
 	/** Whether the trace uses the UML dependency dash pattern. */

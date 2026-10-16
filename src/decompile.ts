@@ -61,6 +61,8 @@ export interface RecoveredConnection {
 	readonly net?: string;
 	readonly signalKind?: string;
 	readonly width?: number;
+	/** Whether the wire was declared `trunk`, branching off its net's copper. */
+	readonly trunk?: boolean;
 }
 
 /** The result of reading a compiled diagram back into declarations. */
@@ -228,6 +230,7 @@ export function parseSchematicSvg(svg: string): SchematicRecovery {
 		const width = attribute(attributes, 'data-bus-width');
 		const net = attribute(attributes, 'data-net-id');
 		const signalKind = attribute(attributes, 'data-signal-kind');
+		const trunk = attribute(attributes, 'data-wire-trunk') !== undefined;
 		connections.push({
 			from: unescapeXml(from),
 			to: unescapeXml(to),
@@ -238,7 +241,8 @@ export function parseSchematicSvg(svg: string): SchematicRecovery {
 			markerEnd: body.match(MARKER_END)?.[1] ?? 'none',
 			...(net === undefined ? {} : { net }),
 			...(signalKind === undefined ? {} : { signalKind }),
-			...(width === undefined ? {} : { width: Number(width) })
+			...(width === undefined ? {} : { width: Number(width) }),
+			...(trunk ? { trunk } : {})
 		});
 	}
 
@@ -273,6 +277,7 @@ export function parseSchematicSvg(svg: string): SchematicRecovery {
 		const options: string[] = [connection.curve];
 		if (connection.signalKind !== undefined) options.push(connection.signalKind);
 		if (connection.width !== undefined) options.push(`width=${connection.width}`);
+		if (connection.trunk === true) options.push('trunk');
 		if (connection.markerStart !== 'none') options.push(`marker-start=${connection.markerStart}`);
 		if (connection.markerEnd !== 'none') options.push(`marker-end=${connection.markerEnd}`);
 		lines.push(

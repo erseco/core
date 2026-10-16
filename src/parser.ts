@@ -1148,6 +1148,8 @@ interface ParsedConnectionOptions {
 	net: string | undefined;
 	/** Optional explicit scalar/bus width. */
 	width: number | undefined;
+	/** Whether the connection branches off its net's existing copper. */
+	trunk: boolean;
 }
 
 /** Split connection options without breaking quoted labels containing whitespace. */
@@ -1205,8 +1207,9 @@ function parseConnectionOptions(raw: string | undefined, line: number): ParsedCo
 	let signalKind: SchematicSignalKind | undefined;
 	let net: string | undefined;
 	let width: number | undefined;
+	let trunk = false;
 	if (raw === undefined || raw.trim() === '') {
-		return { curve, markerStart, markerEnd, relation, label, dashed, signalKind, net, width };
+		return { curve, markerStart, markerEnd, relation, label, dashed, signalKind, net, width, trunk };
 	}
 
 	const seen = new Set<string>();
@@ -1241,6 +1244,11 @@ function parseConnectionOptions(raw: string | undefined, line: number): ParsedCo
 			}
 			signalKind = token;
 			seen.add('signal');
+			continue;
+		}
+		if (token === 'trunk') {
+			if (trunk) throw new SchematicSyntaxError('Connection trunk can only be declared once.', line);
+			trunk = true;
 			continue;
 		}
 		if (token === 'arrow' || token === 'dot') {
@@ -1333,7 +1341,7 @@ function parseConnectionOptions(raw: string | undefined, line: number): ParsedCo
 	if (label === undefined && (relation === 'include' || relation === 'extend')) {
 		label = `«${relation}»`;
 	}
-	return { curve, markerStart, markerEnd, relation, label, dashed, signalKind, net, width };
+	return { curve, markerStart, markerEnd, relation, label, dashed, signalKind, net, width, trunk };
 }
 
 /**
@@ -1361,6 +1369,9 @@ function parseConnection(match: RegExpMatchArray, line: number): SchematicConnec
 	if (options.signalKind !== undefined) connection.signalKind = options.signalKind;
 	if (options.net !== undefined) connection.net = options.net;
 	if (options.width !== undefined) connection.width = options.width;
+	/* Provisional until every connection is read: which end joins the net is
+	   decided by `resolveTrunkBranches`, against the declarations above it. */
+	if (options.trunk) connection.trunk = 'from';
 	return connection;
 }
 
@@ -1767,6 +1778,58 @@ function assignConnectionNetIds(connections: SchematicConnection[]): void {
 	}
 }
 
+/**
+ * Decide, for each `trunk` connection, which end joins copper already drawn.
+ *
+ * A branch is only meaningful when exactly one of its terminals is already
+ * wired: that end is replaced by a tap on the nearest wire of the same net, and
+ * the other end is the new terminal the branch reaches out to. "Already wired"
+ * means reached by a connection declared above this one, so the answer is a
+ * property of the source text rather than of whatever order the router later
+ * places traces in — which is what lets a marker on the wrong end be refused
+ * here, with a line number, instead of depending on routing.
+ *
+ * @param connections - Port-canonical connections in source order.
+ */
+function resolveTrunkBranches(connections: readonly SchematicConnection[]): void {
+	const wired = new Set<string>();
+	for (const connection of connections) {
+		const from = `${connection.from.componentId}.${connection.from.port}`;
+		const to = `${connection.to.componentId}.${connection.to.port}`;
+		if (connection.trunk !== undefined) {
+			if (connection.relation !== 'signal' || connection.curve !== 'ortho') {
+				throw new SchematicSyntaxError(
+					`${from} -> ${to} is marked trunk, which only applies to orthogonal signal wires; add ortho, or drop trunk.`,
+					connection.line
+				);
+			}
+			const fromWired = wired.has(from);
+			if (fromWired === wired.has(to)) {
+				throw new SchematicSyntaxError(
+					fromWired
+						? `${from} -> ${to} is marked trunk, but both terminals are already wired above it, so there is nothing new to branch out to; drop trunk.`
+						: `${from} -> ${to} is marked trunk, but neither terminal is wired above it, so there is no copper to branch from; declare a connection that reaches ${from} or ${to} first, or drop trunk.`,
+					connection.line
+				);
+			}
+			connection.trunk = fromWired ? 'from' : 'to';
+			const marker = fromWired ? connection.markerStart : connection.markerEnd;
+			if (marker !== 'none') {
+				const terminal = fromWired ? from : to;
+				throw new SchematicSyntaxError(
+					`${from} -> ${to} branches off the trunk at ${terminal}'s end, so its ${fromWired ? 'marker-start' : 'marker-end'} has no terminal to sit on; move the marker to the connection that reaches ${terminal}.`,
+					connection.line
+				);
+			}
+		}
+		/* UML connectors carry no net, so they wire nothing a branch could tap. */
+		if (connection.relation === 'signal') {
+			wired.add(from);
+			wired.add(to);
+		}
+	}
+}
+
 /** A fence whose budget is resolved, so no pass re-reads a caller's getters. */
 interface NormalizedFence extends SchematicFence {
 	readonly limits: SchematicResolvedLimits;
@@ -2004,6 +2067,7 @@ export function parseSchematic(source: string, fence: SchematicFence): Schematic
 		validateConnectionWidth(connection, componentsById);
 	}
 	assignConnectionNetIds(connections);
+	resolveTrunkBranches(connections);
 	const document = { components, connections } satisfies SchematicDocument;
 	const geometry = validateSchematicGeometry(document, normalizedFence);
 	const parsedDocument = freezeParsedDocument(document);

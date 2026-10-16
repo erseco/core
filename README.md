@@ -46,6 +46,8 @@ kind:ID "label" right-of REF by 190 #color [options]
 SOURCE.port -> TARGET.port #color [line|bezier|ortho options]
 ```
 
+A net that reaches several terminals can be drawn as a tree: mark a connection `[ortho trunk]` and it branches off the copper its net already has, with a junction dot, instead of running back to its own pin.
+
 Bad variants, duplicate options, unknown ports, mismatched bus widths, unsafe colours, and out-of-bounds geometry all fail with a line-accurate diagnostic before any SVG is written.
 
 ## What it compiles
