@@ -341,6 +341,33 @@ const mutants = [
 	 * cannot fall out of step with the keywords the parser accepts. Emptying one
 	 * is the drift a hand-written literal would have risked, and it must be loud.
 	 */
+	/*
+	 * The sparse search caches each edge's price for one route. Three ways the
+	 * cache could go wrong while every route still "works": a price leaking into
+	 * the next route, the two axes of a cell sharing one slot, and an edge priced
+	 * from whichever end reached it first instead of one canonical end.
+	 */
+	{
+		name: 'an edge price does not survive into the next route',
+		file: 'src/layout.ts',
+		from: 'return this.#edgeStamp[slot] === this.#epoch ? this.#edgeCost[slot]! : UNPRICED_EDGE;',
+		to: 'return this.#edgeStamp[slot] !== 0 ? this.#edgeCost[slot]! : UNPRICED_EDGE;',
+		tests: ['tests/router-arena.test.ts']
+	},
+	{
+		name: 'an edge is keyed by its axis as well as its cell',
+		file: 'src/layout.ts',
+		from: 'const slot = (forward ? currentCell : nextY * width + nextX) * 2 + (direction - 1);',
+		to: 'const slot = (forward ? currentCell : nextY * width + nextX) * 2;',
+		tests: ['tests/router-arena.test.ts']
+	},
+	{
+		name: 'an edge is keyed by its west or north cell, not by who reached it',
+		file: 'src/layout.ts',
+		from: 'const slot = (forward ? currentCell : nextY * width + nextX) * 2 + (direction - 1);',
+		to: 'const slot = currentCell * 2 + (direction - 1);',
+		tests: ['tests/router-arena.test.ts']
+	},
 	{
 		name: 'a family set is derived from the registry it classifies',
 		file: 'src/layout.ts',

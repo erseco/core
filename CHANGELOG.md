@@ -2,6 +2,17 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
+## [Unreleased]
+
+### Performance
+
+- **The sparse router prices each grid edge once per route.** A profile of a thirteen-wire bus put 57% of compile time in `indexedSegmentCollision` and `wireSegmentCost`, and most of those calls asked a question already answered: the search reaches an edge from both of its cells, and from each cell once per arrival direction, while the obstacles and placed wires it is priced against stay fixed for the whole search. The arena now keeps one price per undirected edge under the same generation stamp as its score columns, so a fresh route still costs one integer increment. Reversal buses compile 1.42–1.57× faster: twelve wires in 18.3 ms from 27.5, thirty-two in 61.0 ms from 86.4. Dense 16×16 routing never reaches the sparse search and is unchanged.
+- An edge is always priced from its west or north end, so its price cannot depend on which side reached it first. Both predicates are symmetric on an axis-aligned span — each reads only the span's extent, and the contact test's collinear branch reduces to one exact product when either delta is zero — and the change is byte-identical across all 261 corpus documents and eight further reversal-bus and dense-grid stress documents. It costs 127 B gzip.
+
+### Verified
+
+- Three mutants join the kill gate for the edge cache: a price must not survive into the next route, an edge must be keyed by its axis as well as its cell, and an edge must be keyed by its west or north cell rather than by whichever cell reached it. A test pins the SVG digests of the eight- and twelve-wire buses recorded from the uncached router.
+
 ## [0.7.0] - 2026-08-01
 
 ### Added

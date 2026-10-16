@@ -1789,6 +1789,12 @@ const ROUTER_DIRECTIONS = 3;
 /** Sentinel for "no predecessor" in the arena's parent column. */
 const NO_STATE = -1;
 
+/** An edge an obstacle blocks. Real prices are never negative, so this cannot collide with one. */
+const BLOCKED_EDGE = -1;
+
+/** An edge not yet priced in the current route. */
+const UNPRICED_EDGE = -2;
+
 /**
  * Allocation-free scratch for the bounded sparse Manhattan fallback.
  *
@@ -1824,6 +1830,12 @@ export class RouterArena {
 	#heapG: Float64Array = EMPTY_F64;
 	/** Number of live heap entries. */
 	#size = 0;
+	/**
+	 * Price of each undirected lane-grid edge, two slots per cell: east, then
+	 * south. Meaningful only when its stamp is current, like the score columns.
+	 */
+	#edgeCost: Float64Array = EMPTY_F64;
+	#edgeStamp: Int32Array = EMPTY_I32;
 	/** State and cost most recently removed by {@link pop}. */
 	poppedState = NO_STATE;
 	poppedG = 0;
@@ -1845,6 +1857,10 @@ export class RouterArena {
 			/* A fresh stamp column is all zeroes, so the epoch must leave zero
 			   behind or every state in it would read as already visited. */
 			this.#stamp = new Int32Array(states);
+			/* Grown in the same branch as the stamp column because they share its
+			   epoch: a surviving edge stamp would read as current after the reset. */
+			this.#edgeCost = new Float64Array(cells * 2);
+			this.#edgeStamp = new Int32Array(cells * 2);
 			this.#epoch = 0;
 		}
 		this.#epoch += 1;
@@ -1996,6 +2012,24 @@ export class RouterArena {
 	predecessor(state: number): number {
 		return this.#previous[state]!;
 	}
+
+	/**
+	 * The price recorded for edge `slot` this route, or {@link UNPRICED_EDGE}.
+	 *
+	 * Obstacles and placed wires are fixed for the length of one search, so an
+	 * edge's price is too — yet the search asks for it from both of its cells,
+	 * and from each cell once per arrival direction. Pricing is two spatial-hash
+	 * queries and was over half of a contended compile, so it is paid once.
+	 */
+	edge(slot: number): number {
+		return this.#edgeStamp[slot] === this.#epoch ? this.#edgeCost[slot]! : UNPRICED_EDGE;
+	}
+
+	/** Record the price of edge `slot` for the rest of this route. */
+	priceEdge(slot: number, cost: number): void {
+		this.#edgeCost[slot] = cost;
+		this.#edgeStamp[slot] = this.#epoch;
+	}
 }
 
 /**
@@ -2135,7 +2169,25 @@ function searchOrthogonalRoute(
 			const direction = step < 2 ? 1 : 2;
 			to.x = xs[nextX]!;
 			to.y = ys[nextY]!;
-			if (indexedSegmentCollision(index, from, to, fromId, toId, 'route')) continue;
+			/*
+			 * An edge is keyed by its west or north cell, and always priced from
+			 * that end, so the answer cannot depend on which side reached it first.
+			 * Both predicates are symmetric on an axis-aligned span: each reads only
+			 * the span's extent, and the contact test's collinear branch reduces to
+			 * one exact product when either delta is zero.
+			 */
+			const forward = step === 1 || step === 3;
+			const slot = (forward ? currentCell : nextY * width + nextX) * 2 + (direction - 1);
+			let edgeCost = arena.edge(slot);
+			if (edgeCost === UNPRICED_EDGE) {
+				const low = forward ? from : to;
+				const high = forward ? to : from;
+				edgeCost = indexedSegmentCollision(index, low, high, fromId, toId, 'route')
+					? BLOCKED_EDGE
+					: wireSegmentCost(index, low, high, connection);
+				arena.priceEdge(slot, edgeCost);
+			}
+			if (edgeCost === BLOCKED_EDGE) continue;
 			const state = (nextY * width + nextX) * ROUTER_DIRECTIONS + direction;
 			const bend = currentDirection !== 0 && currentDirection !== direction;
 			const g =
@@ -2143,7 +2195,7 @@ function searchOrthogonalRoute(
 				Math.abs(from.x - to.x) +
 				Math.abs(from.y - to.y) +
 				(bend ? ROUTER_BEND_PENALTY : 0) +
-				wireSegmentCost(index, from, to, connection);
+				edgeCost;
 			if (!arena.improves(state, g)) continue;
 			arena.relax(state, currentState, g);
 			arena.push(state, g, g + Math.abs(to.x - end.x) + Math.abs(to.y - end.y));

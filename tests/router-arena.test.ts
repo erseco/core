@@ -288,3 +288,61 @@ describe('determinism', () => {
 		expect(second.svg).toBe(first.svg);
 	});
 });
+
+describe('edge prices', () => {
+	/*
+	 * Obstacles and placed wires stay fixed for one search, so an edge's price is
+	 * cached for the route rather than re-queried from each side and each arrival
+	 * direction. A cache is only an optimisation if nobody can observe it: these
+	 * pin both its bookkeeping and the routes it produces.
+	 */
+	test('an edge is unpriced until priced, then answers what was recorded', () => {
+		const arena = new RouterArena();
+		arena.begin(8);
+		expect(arena.edge(3)).toBe(-2);
+		arena.priceEdge(3, 16);
+		arena.priceEdge(4, -1);
+		arena.priceEdge(5, Number.POSITIVE_INFINITY);
+		expect(arena.edge(3)).toBe(16);
+		expect(arena.edge(4)).toBe(-1);
+		expect(arena.edge(5)).toBe(Number.POSITIVE_INFINITY);
+		expect(arena.edge(6)).toBe(-2);
+	});
+
+	test('a price does not survive into the next route', () => {
+		const arena = new RouterArena();
+		arena.begin(8);
+		arena.priceEdge(3, 16);
+		arena.begin(8);
+		expect(arena.edge(3)).toBe(-2);
+	});
+
+	test('growing the grid does not resurrect stale prices', () => {
+		const arena = new RouterArena();
+		arena.begin(8);
+		arena.priceEdge(3, 16);
+		arena.begin(4_096);
+		expect(arena.edge(3)).toBe(-2);
+		arena.priceEdge(8_000, 24);
+		expect(arena.edge(8_000)).toBe(24);
+	});
+
+	test('cached pricing changes no route', () => {
+		/*
+		 * Digests recorded from the uncached router. The twelve-wire bus spends
+		 * seven passes in the sparse search, so a price keyed to the wrong edge,
+		 * the wrong axis, or the wrong end shows up here as moved copper.
+		 */
+		const digest = (wires: number) => {
+			const result = compileSchematic(reversalBus(wires), { ...BUS_FENCE, mode: 'full' });
+			/* FNV-1a: the suite has no Node typings, and a digest needs no more. */
+			let hash = 0x811c9dc5;
+			for (let index = 0; index < result.svg.length; index += 1) {
+				hash = Math.imul(hash ^ result.svg.charCodeAt(index), 0x01000193);
+			}
+			return { svg: (hash >>> 0).toString(16), attempts: result.routing.attempts };
+		};
+		expect(digest(8)).toEqual({ svg: '265659f7', attempts: 0 });
+		expect(digest(12)).toEqual({ svg: '235a255e', attempts: 7 });
+	});
+});
