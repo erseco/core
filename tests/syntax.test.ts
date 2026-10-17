@@ -117,7 +117,8 @@ const VALID = [
 function lines(): string[] {
 	const next = random(0x5c4e3d);
 	const pick = <T,>(items: readonly T[]): T => items[Math.floor(next() * items.length)]!;
-	const out: string[] = [...VALID];
+	/* Edges a generator rarely lands on: a clause that ends the line. */
+	const out: string[] = [...VALID, 'port:P "in" right-of R1', 'port:P "in" above R1.x+ by 4', 'port:P "in" aligned-x with R1 below R2.in', 'port:P "in" right-of R1 by'];
 	for (let index = 0; index < 20_000; index += 1) {
 		const length = 1 + Math.floor(next() * 14);
 		let text = '';

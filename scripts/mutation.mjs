@@ -261,7 +261,7 @@ const mutants = [
 	{
 		name: "no shortcut retakes a priced track",
 		file: "src/route.ts",
-		from: "if (this.history.size > 0) return undefined;",
+		from: "if (this.#history.size > 0) return undefined;",
 		to: "",
 		tests: ["tests/route.test.ts"]
 	},
@@ -317,8 +317,8 @@ const mutants = [
 	{
 		name: "torn-up copper no longer occupies the canvas",
 		file: "src/route.ts",
-		from: "return this.copper.query(rect).filter((piece) => piece.dead !== true);",
-		to: "return this.copper.query(rect);",
+		from: "return this.#copper.query(rect).filter((piece) => piece.dead !== true);",
+		to: "return this.#copper.query(rect);",
 		tests: ["tests/route.test.ts"]
 	},
 	{
@@ -362,27 +362,6 @@ const mutants = [
 		from: "if (fraction.length > 3 && fraction.charCodeAt(3) >= 53) value += 1;",
 		to: "",
 		tests: ["tests/geom.test.ts"]
-	},
-	{
-		name: "a tail holding a line separator is unrecognized, as in 0.x",
-		file: "src/syntax.ts",
-		from: "return text.indexOf('\\u2028', index) >= 0 || text.indexOf('\\u2029', index) >= 0;",
-		to: "return false;",
-		tests: ["tests/syntax.test.ts"]
-	},
-	{
-		name: "a port gives its final hyphen back to the arrow",
-		file: "src/syntax.ts",
-		from: "fromPortEnd -= 1;",
-		to: "",
-		tests: ["tests/syntax.test.ts"]
-	},
-	{
-		name: "an incomplete by-gap is abandoned, as the optional group was",
-		file: "src/syntax.ts",
-		from: "if (numberEnd > 0 && separator(text, numberEnd) >= 0) {",
-		to: "if (numberEnd > 0) {",
-		tests: ["tests/syntax.test.ts"]
 	},
 	{
 		name: "an unknown endpoint is reported at its token",
@@ -453,6 +432,27 @@ const mutants = [
 		from: "{ right: 0, down: 1, left: 2, up: 3 }",
 		to: "{ right: 0, down: 3, left: 2, up: 1 }",
 		tests: ["tests/ports.test.ts", "tests/primitives.test.ts"]
+	},
+	{
+		name: "a relation is read only where the last one ended",
+		file: "src/syntax.ts",
+		from: "const DIRECTION = new RegExp(`(right-of|left-of|above|below)\\\\s+(${ID})(?:\\\\.(${PORT}))?(?:\\\\s+by\\\\s+(${DECIMAL}))?(?:\\\\s+|$)`, 'y');",
+		to: "const DIRECTION = new RegExp(`(right-of|left-of|above|below)\\\\s+(${ID})(?:\\\\.(${PORT}))?(?:\\\\s+by\\\\s+(${DECIMAL}))?(?:\\\\s+|$)`, 'g');",
+		tests: ["tests/syntax.test.ts"]
+	},
+	{
+		name: "a relative declaration needs a tail after its relations",
+		file: "src/syntax.ts",
+		from: "if (clause.relations.length > 0 && clause.tail < text.length) {",
+		to: "if (clause.relations.length > 0) {",
+		tests: ["tests/syntax.test.ts"]
+	},
+	{
+		name: "a token reports the columns it sits at",
+		file: "src/syntax.ts",
+		from: "const [start, end] = match.indices![group]!;\n\treturn { text: match[group]!, start, end };",
+		to: "return { text: match[group]!, start: 0, end: match[group]!.length };",
+		tests: ["tests/diagnose.test.ts"]
 	}
 ];
 

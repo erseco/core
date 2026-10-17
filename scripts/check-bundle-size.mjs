@@ -11,7 +11,7 @@
  * given host never calls. Tracking only the first budget let the published
  * figure move 1.8 KB in 0.3.4 with no gate noticing.
  */
-import { gzipSync } from 'node:zlib';
+import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 
@@ -62,7 +62,23 @@ const BUDGETS = [
 		 * trunks, `subcircuit` is syntax, so it is carried by every host that
 		 * parses; a document that defines none skips the pass after one scan.
 		 */
-		maxGzipBytes: 38 * 1024
+		/*
+		 * 40 KiB from 38 in 1.0, and brotli-11 now gated beside gzip. The rebuild
+		 * deleted the per-connection router with its reorder, rip-up rescue and
+		 * bundle nudging, the per-kind switches, and the hand-written scanner
+		 * (the 0.x patterns with the `d` flag give the same columns), and paid
+		 * for: routing by net with trees and junctions by default, negotiated
+		 * congestion with history (PathFinder), a spatial index that keeps
+		 * compilation linear, exact integer geometry, wires that keep clear of
+		 * text, the diagnostics model behind `diagnoseSchematic`, and five new
+		 * diagnostics that say how to fix what they report. Net cost about
+		 * 1.9 KiB gzip over 0.8. Measured against the 0.8.0 build: the routing
+		 * stack is where the bytes are, and it is code, which compresses worse
+		 * than the templates it replaced. The one lever left — moving diagnostic
+		 * prose behind codes, about 2.9 KiB — is not one this project takes.
+		 */
+		maxGzipBytes: 40 * 1024,
+		maxBrotliBytes: 35 * 1024
 	},
 	{
 		label: 'Package bundle (every public export)',
@@ -71,7 +87,9 @@ const BUDGETS = [
 		/* 37 KiB from 35 in 0.5, for the same two features plus their exported types. */
 		/* 39 KiB from 37 in 0.8: the 116 B left over could not hold trunks, and
 		   the decompiler reads them back too. 41 KiB from 39 in 0.8, for sub-circuits. */
-		maxGzipBytes: 41 * 1024
+		/* 43 KiB from 41 in 1.0, for the same machinery plus `diagnoseSchematic`. */
+		maxGzipBytes: 43 * 1024,
+		maxBrotliBytes: 38 * 1024
 	}
 ];
 
@@ -108,16 +126,22 @@ async function measure({ module, entry }) {
 	if (chunks.length !== 1) throw new Error(`Expected one chunk; received ${chunks.length}.`);
 	return {
 		minifiedBytes: Buffer.byteLength(chunks[0].code),
-		gzipBytes: gzipSync(chunks[0].code, { level: 9 }).byteLength
+		gzipBytes: gzipSync(chunks[0].code, { level: 9 }).byteLength,
+		brotliBytes: brotliCompressSync(chunks[0].code, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).byteLength
 	};
 }
 
 const failures = [];
 for (const budget of BUDGETS) {
-	const { minifiedBytes, gzipBytes } = await measure(budget);
+	const { minifiedBytes, gzipBytes, brotliBytes } = await measure(budget);
 	const headroom = budget.maxGzipBytes - gzipBytes;
+	if (brotliBytes > budget.maxBrotliBytes) {
+		failures.push(
+			`${budget.label} exceeds its ${budget.maxBrotliBytes.toLocaleString('en-US')} B brotli-11 budget by ${(brotliBytes - budget.maxBrotliBytes).toLocaleString('en-US')} B.`
+		);
+	}
 	console.log(
-		`${budget.label}: ${minifiedBytes.toLocaleString('en-US')} B minified, ${gzipBytes.toLocaleString('en-US')} B gzip ` +
+		`${budget.label}: ${minifiedBytes.toLocaleString('en-US')} B minified, ${brotliBytes.toLocaleString('en-US')} B brotli-11, ${gzipBytes.toLocaleString('en-US')} B gzip ` +
 			`(${
 				headroom >= 0
 					? `${headroom.toLocaleString('en-US')} B under`
