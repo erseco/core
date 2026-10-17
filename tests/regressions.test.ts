@@ -828,6 +828,22 @@ C2.positive -> C1.out1 #blue [ortho]`,
 		).toThrow('Line 4: C1.out1 sits against C2: the wire leaving it would run straight through C2. Move one of them away.');
 	});
 
+	test('copies of one connection that differ only in a marker or a label share one copper, in any order', () => {
+		/* The last tie-breaks between candidates the geometry cannot separate:
+		   whether the end on the tree may join it, then whether a label rides
+		   along. Whichever wins, the copies are one net drawn once. */
+		const parts = 'port:P "P" at (100, 150) #blue\nport:Q "Q" at (500, 260) #blue [orientation=left]';
+		for (const copies of [
+			['P.out -> Q.in #blue [ortho marker-start=arrow]', 'P.out -> Q.in #blue [ortho]', 'P.out -> Q.in #blue [ortho marker-start=arrow]'],
+			['P.out -> Q.in #blue [ortho label="a"]', 'P.out -> Q.in #blue [ortho]', 'P.out -> Q.in #blue [ortho label="b"]']
+		]) {
+			for (const order of [copies, [...copies].reverse()]) {
+				const result = compileSchematic(`${parts}\n${order.join('\n')}`, { bounds: { width: 640, height: 400 }, title: 'copies', mode: 'full' });
+				expect(traces(result.svg)).toEqual(Array(3).fill('M 142 150 H 554 V 260 H 542'));
+			}
+		}
+	});
+
 	test('of two equal connections, the one whose growing end may join is drawn as the branch', () => {
 		/* The arrowed copy may still join the tree at its plain end, so it is
 		   the one grown from the copper the net already has. */
