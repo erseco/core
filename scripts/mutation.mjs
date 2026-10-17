@@ -705,6 +705,13 @@ const mutants = [
 		from: "\t\t\tif (reference === undefined && failedDeclarations?.has(relation.ref) === true) {",
 		to: "\t\t\tif (false) {",
 		tests: ["tests/diagnose.test.ts"]
+	},
+	{
+		name: "connections are still checked after a placement fails",
+		file: "src/parser.ts",
+		from: "\t\t   terminal's name depends on its part's kind, never on where it sits. */\n\t\tfor (const entry of pending) {",
+		to: "\t\t   terminal's name depends on its part's kind, never on where it sits. */\n\t\tif (reporter.failed) return undefined;\n\t\tfor (const entry of pending) {",
+		tests: ["tests/diagnose.test.ts"]
 	}
 ];
 

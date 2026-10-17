@@ -624,7 +624,9 @@ function analyze(source: string, fence: SchematicFence, reporter: Reporter): Sch
 	let placements: ReturnType<typeof resolvePlacements> = [];
 	if (pending.length > 0) {
 		placements = resolvePlacements(components, pending, limits.placementDepth, (error) => reporter.report(error), poisoned);
-		if (reporter.failed) return undefined;
+		/* A placement that failed leaves its part unplaced, at its origin, not
+		   undeclared: every connection is still checked below, because a
+		   terminal's name depends on its part's kind, never on where it sits. */
 		for (const entry of pending) {
 			const offences = boundsOffences(entry.component, normalized);
 			if (offences !== undefined) reporter.report(new SchematicSyntaxError(offences, entry.component.line, undefined, 'geometry'));

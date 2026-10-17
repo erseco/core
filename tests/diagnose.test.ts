@@ -177,6 +177,22 @@ describe('placement', () => {
 		expect(diagnostics.every((diagnostic) => diagnostic.code === 'placement')).toBe(true);
 	});
 
+	test('a broken placement does not hide a mistyped terminal on another line', () => {
+		const diagnostics = diagnoseSchematic(
+			doc(
+				'source:VIN "v" at (90, 170) #blue [type=voltage-dc]',
+				'capacitor:C1 "c" below R2 by 80 #cyan [orientation=down]',
+				'diode:D1 "d" at (520, 170) #rose [type=led]',
+				'VIN.positive -> D1.anod #blue [ortho]'
+			),
+			fence
+		);
+		expect(diagnostics.map(({ line, code }) => [line, code])).toEqual([
+			[2, 'placement'],
+			[4, 'reference']
+		]);
+	});
+
 	test('a part placed against a declaration that failed is not told it was never declared', () => {
 		/* R1 is declared; its own option failed. D1 is placed right-of R1 and used
 		   to be blamed for referencing a part "the document never declares". */
