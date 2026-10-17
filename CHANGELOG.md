@@ -2,6 +2,42 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
+## [1.0.0] - Unreleased
+
+1.0 is a rebuild of the compiler's core behind the same language and the same API. The language is read exactly as before — the 0.8 declaration patterns are the front end — and of the corpus's 54 rejections under 0.8, 52 are byte-identical in 1.0. Drawings change, because the router is new, and three corpus documents change outcome; each is listed under *Changed*.
+
+### Changed
+
+- **Wires are routed by net, and a multi-terminal net is always a tree.** Connections that share a terminal are grown as one tree: the first runs terminal to terminal, every later one leaves the nearest copper the net already has, and every junction gets a dot. A junction is held two pitches off any pin, and a tree never meets four ways at one point. `trunk` is still parsed, validated and recorded as `connection.trunk`, but the drawing no longer depends on it — a net without it is drawn the same tree. A connection whose joining end carries a marker keeps its full terminal-to-terminal path, so an arrowhead never lands on a junction.
+- **Routing is one lattice search per net, with negotiated congestion.** Wires live on a lattice of channel-pitch lines plus the coordinates that matter — obstacle edges, pins and escape points — and each search builds only its own window. Every net is routed once in an order derived from geometry, never declaration order, with contact between nets forbidden; most documents finish there. A net that cannot be placed that way is placed at a price, and the router negotiates: the nets in contact are torn up and rerouted with the price raised and a history cost on every location contested before (PathFinder, McMurchie & Ebeling 1995). Every cost is an integer, so the result is exact and identical on every engine. `routing.attempts` counts negotiation rounds and `routing.rippedUp` the wires torn up in them; `routingAttempts: 1` forbids contact outright. The per-connection router, its reorder and rip-up rescue, and bundle nudging are gone, so `routing.nudged` is always `false`.
+- **Wires are drawn the way a draughtsman would.** A wire leaves its pin along the pin's axis and arrives along the target's, turning beside the obstacle rather than at the pin; it keeps clearance from component text and from every component, its own included, wherever there is room; it never passes through a pin nothing is wired to; and it never backs over its own stub. A pin whose exit runs through its own text leaves straight through it and turns only beyond it.
+- **Bridges are drawn on vertical runs.** Where an orthogonal wire's vertical run crosses another net, the vertical run carries the arc; horizontal runs stay straight. An arc beside a neighbouring net's parallel wire shrinks to half the gap rather than bulging into it.
+- **Geometry is integer milli-units throughout.** Coordinates are stored and compared as integers, rounding is symmetric about zero, orientation tests fall back to exact BigInt products past 2²⁶, and numbers are formatted from their digits. Public geometry is therefore exact to three decimals — a terminal 0.8 reported at `489.3333333333333` is `489.333` — and no corpus trace has a fractional coordinate (five 0.8 documents did).
+- **`reset.out1` addresses the reset's output.** 0.8 resolved it to the input terminal. Every other spelling of every terminal on 175 kinds and variants resolves exactly as in 0.8, checked against a fixture recorded from the 0.8.0 build.
+- **A line or Bézier wire through another component's terminal is rejected.** It would read as a connection: `Bézier route passes through R16.in, which it does not connect; use an orthogonal route or move R16.` One corpus document 0.8 compiled is now rejected for this, and one 0.8 rejected for a crossing now reports this instead. A third, which 0.8 rejected because an orthogonal wire crossed a drawn one, now compiles: the orthogonal wire is routed around it.
+- Two nets whose pin stubs touch are named as such — `A.out and B.in sit too close to route apart as separate nets: the wires leaving them would touch. Move one of them away, or join them with a shared net.` — rather than reported as a routing failure. A pin stub running through a third component's body is reported as unroutable.
+
+### Added
+
+- **`diagnoseSchematic(source, fence)` reports every problem in a document at once**, in source order, each with its line and, where the compiler knows it, the column range of the token at fault. A declaration that fails does not cascade into the lines that use it, and placement, geometry and routing run only on a document whose declarations are sound. It returns `SchematicSourceDiagnostic[]` — `{ code, message, line?, column?, endColumn?, severity }` — and throws only for arguments that are not a document. `SchematicSyntaxError` carries the same `column`, `endColumn` and `code`; `SCHEMATIC_DIAGNOSTIC_CODES` lists the codes.
+- A line rewritten by a sub-circuit parameter carries no column, since its columns would point at text the author never wrote.
+
+### Performance
+
+- **A contended twelve-wire reversal bus compiles in 1.44 ms, from 16.6 ms.** It routes in the first pass. The search bound counts the bends a pin's facing makes unavoidable, which is exact in open space.
+- **Compilation stays linear in document size.** A uniform-grid index over obstacles, wires and labels means a search reads only its window: 10,000 components compile in 0.22 s.
+- Dense 16×16 routing is slower — 14.8 ms from 4.1 — because every one of its 32 targets sits on the far side of a tightly packed column of parts, and wrapping each one with clearance is real work on a finer lattice. Simple documents cost about 0.35 ms, from 0.22. Warm medians on one machine; run `bun run benchmark` on yours.
+
+### Size
+
+- **40,666 B gzip and 35,457 B brotli-11 for the compile path, 2.4 KiB over 0.8.** The rebuild deleted the old router, its rescue paths and the parallel per-kind switches, and replaced the 0.x declaration patterns' hand-maintained consumers with the patterns themselves under the `d` flag, which report token columns for free. It paid for routing by net, negotiation, the spatial index, exact geometry, draughting rules and the diagnostics model. The size gate now measures brotli-11 beside gzip.
+
+### Verified
+
+- **100% statement, branch, function and line coverage over 619 tests**, including a router suite that proves negotiation converges, a differential test that the declaration front end classifies 40,000 generated lines exactly as the 0.8 patterns did, and the 0.8 port-resolution fixture.
+- **68 of 68 mutants are killed.** Forty-four are new, aimed at the 1.0 core. Each that survived its first run became a test: layouts found by search where a tree would meet four ways, where a rerouted tree would branch from its own torn-up copper, where a wire would run through another net's pin, and where a wire would back over its own stub.
+- The corpus is re-recorded for 1.0. Of its 54 rejections under 0.8, 52 keep their exact message and line.
+
 ## [0.8.0] - 2026-10-16
 
 ### Added

@@ -57,9 +57,9 @@ whether your change should be updating it.
 | `bun run test` | Behaviour; 20 suites under `tests/` | via coverage |
 | `bun run test:coverage` | 100% on all four axes | yes |
 | `bun run test:fuzz` | Bounded fuzzing — no hang, no unhandled throw | via `test` |
-| `bun run test:mutation` | 24 named mutants, all of which must die | yes |
+| `bun run test:mutation` | 68 named mutants, all of which must die | yes |
 | `bun run test:visual` | Chromium pixel goldens | yes |
-| `bun run size` | Both gzip budgets | yes |
+| `bun run size` | gzip and brotli-11 budgets for the compile path and the package | yes |
 | `node scripts/benchmark.mjs` | Latency ceilings and per-component scaling | no — local only |
 
 The benchmark stays out of CI because shared runners are too noisy for latency numbers to mean
@@ -74,18 +74,23 @@ exist. Closing that gap is what the mutation gate is for.
 
 ### The mutation gate
 
-`scripts/mutation.mjs` holds 24 named mutants: a precise source substitution plus the tests that must
+`scripts/mutation.mjs` holds 68 named mutants: a precise source substitution plus the tests that must
 fail when it is applied. Each is stated as a *property* rather than an edit:
 
 ```js
 {
-  name: 'a contact the validator rejects must cost the router infinity',
-  file: 'src/layout.ts',
-  from: "…if (!contact.strict || contact.overlap || !previous.orthogonal) {…",
-  to:   '…if (false) {…',
-  tests: ['tests/layout.test.ts', 'tests/regressions.test.ts']
+  name: 'a contested location costs every net, touching or not',
+  file: 'src/route.ts',
+  from: 'let cost = g + length * (soft === 2 ? 2 : 1) + history;',
+  to:   'let cost = g + length * (soft === 2 ? 2 : 1);',
+  tests: ['tests/route.test.ts']
 }
 ```
+
+A mutant that survives because no test can see the difference is the gate doing its job. Find an
+input that separates the two versions — several of the router's fixtures were found by a seeded
+random search run against the mutant — and keep it as a test. A mutant no input can separate is
+equivalent; remove it and say why in the pull request.
 
 If your change adds a load-bearing invariant, add a mutant for it. The bar: could this line be
 weakened while every test stays green? `from` must match the source exactly, tabs included, so
@@ -100,15 +105,12 @@ wire its own colour, putting each in a batch of its own and hiding a real defect
 shared across several wires — for releases. When you add a golden, ask what the existing ones
 accidentally share.
 
-### Rip-up can hide a router defect
+### Negotiation can hide a router defect
 
-Since 0.5 the router retries around a trace it cannot place. That is a new way for a test to quietly
-stop protecting anything: a fixture asserting only that a diagram *compiles* keeps passing while
-terminal-approach reservation or contact pricing regresses, because the retry absorbs the failure.
-
-Not hypothetical — adding rip-up made the 0.4.0 mutant `terminal approaches are reserved before any
-wire is placed` survive, and we strengthened the test rather than retiring the mutant. **If a fixture
-is an ordinary figure, assert `routing.attempts === 0` too.**
+The router routes every net once with contact forbidden, then negotiates over whatever is left. That
+is a way for a test to quietly stop protecting anything: a fixture asserting only that a diagram
+*compiles* keeps passing while the first pass regresses, because negotiation absorbs the failure.
+**If a fixture is an ordinary figure, assert `routing.attempts === 0` too.**
 
 ## Public or internal — decide once
 

@@ -8,11 +8,10 @@ const MAX_MEDIAN_MS = new Map([
 	['maximum-512-components', 30],
 	['dense-16x16-routing', 75],
 	/*
-	 * The retry path needs its own ceiling. Every case above routes on the first
-	 * pass and would stay green if rip-up became arbitrarily expensive, because
-	 * they never enter it. This one is a twelve-wire reversal bus, which is the
-	 * widest this router places and takes seven passes to settle — so it prices
-	 * what a contended document actually costs.
+	 * A twelve-wire reversal bus: the case 0.x needed seven rip-up passes and a
+	 * bundle rescue to place, and the one that prices contention. Since 1.0 it
+	 * routes in the first pass, so this ceiling now guards the net router's
+	 * search on a crowded channel rather than a retry loop.
 	 */
 	['contended-12-wire-bus', 120]
 ]);

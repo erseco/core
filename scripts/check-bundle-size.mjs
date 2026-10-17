@@ -70,9 +70,9 @@ const BUDGETS = [
 		 * for: routing by net with trees and junctions by default, negotiated
 		 * congestion with history (PathFinder), a spatial index that keeps
 		 * compilation linear, exact integer geometry, wires that keep clear of
-		 * text, the diagnostics model behind `diagnoseSchematic`, and five new
-		 * diagnostics that say how to fix what they report. Net cost about
-		 * 1.9 KiB gzip over 0.8. Measured against the 0.8.0 build: the routing
+		 * text and free pins, pins entered along their axis, the diagnostics
+		 * model behind `diagnoseSchematic`, and new diagnostics that say how to
+		 * fix what they report. Net cost about 2.4 KiB gzip over 0.8. Measured against the 0.8.0 build: the routing
 		 * stack is where the bytes are, and it is code, which compresses worse
 		 * than the templates it replaced. The one lever left — moving diagnostic
 		 * prose behind codes, about 2.9 KiB — is not one this project takes.
