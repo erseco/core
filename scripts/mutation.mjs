@@ -453,6 +453,20 @@ const mutants = [
 		from: "const [start, end] = match.indices![group]!;\n\treturn { text: match[group]!, start, end };",
 		to: "return { text: match[group]!, start: 0, end: match[group]!.length };",
 		tests: ["tests/diagnose.test.ts"]
+	},
+	{
+		name: "a wire sets off along its pin's axis",
+		file: "src/route.ts",
+		from: "const heading = mode === 'point' ? axes[0] : 0;",
+		to: "const heading = 0;",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "a pin is never entered from behind, along its own stub",
+		file: "src/route.ts",
+		from: "if (along[index] === to) continue;",
+		to: "continue;",
+		tests: ["tests/layout.test.ts", "tests/route.test.ts", "tests/regressions.test.ts"]
 	}
 ];
 

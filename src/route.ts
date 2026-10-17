@@ -183,6 +183,23 @@ export class Buckets<T> {
 	}
 }
 
+/**
+ * How a search starts and ends: the axis it sets off on, the axis it arrives
+ * on, and which way along that axis the target pin faces (0 free, 1 horizontal,
+ * 2 vertical; the facing is +1 or -1).
+ */
+type Axes = readonly [number, number, number];
+
+/** The axis a pin's stub runs along, or 0 for a pin with no stub. */
+function axisOf(terminal: RouterTerminal): number {
+	return terminal.point.y !== terminal.escape.y ? 2 : terminal.point.x !== terminal.escape.x ? 1 : 0;
+}
+
+/** Start and end headings for a search from `from` to `to`. */
+function axesOf(from: RouterTerminal | undefined, to: RouterTerminal): Axes {
+	return [from === undefined ? 0 : axisOf(from), axisOf(to), Math.sign(to.escape.x - to.point.x + to.escape.y - to.point.y)];
+}
+
 /** The bounding rectangle of a segment. */
 function spanOf(a: IPoint, b: IPoint): IRect {
 	return { minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y), maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y) };
@@ -198,6 +215,8 @@ interface Unit {
 }
 
 const pointKey = (point: IPoint): string => `${point.x},${point.y}`;
+
+const sameAs = (left: IPoint, right: IPoint): boolean => left.x === right.x && left.y === right.y;
 
 /** Lexicographic comparison of two points, x first. */
 function comparePoints(left: IPoint, right: IPoint): number {
@@ -597,7 +616,7 @@ class Router {
 		if (!unit.tree) {
 			const index = unit.wires[0]!;
 			const wire = this.#input.wires[index]!;
-			const path = this.#facing(unit, wire) ?? this.#search(unit, [wire.from.escape], wire.to.escape, [], index, 'point');
+			const path = this.#facing(unit, wire) ?? this.#search(unit, [wire.from.escape], wire.to.escape, [], index, 'point', undefined, axesOf(wire.from, wire.to));
 			if (path === undefined) return index;
 			this.#commit(index, path, false, false);
 			return -1;
@@ -650,8 +669,8 @@ class Router {
 			const branch = mayJoin && !first;
 			const avoid = this.#unconnectedStubs(unit, connected, free!);
 			const path = branch
-				? this.#search(unit, this.#treeSources(unit, connected), free!.escape, avoid, chosen, 'tree', connected)
-				: (this.#facing(unit, wire) ?? this.#search(unit, [anchor!.escape], free!.escape, avoid, chosen, 'point'));
+				? this.#search(unit, this.#treeSources(unit, connected), free!.escape, avoid, chosen, 'tree', connected, axesOf(undefined, free!))
+				: (this.#facing(unit, wire) ?? this.#search(unit, [anchor!.escape], free!.escape, avoid, chosen, 'point', undefined, axesOf(anchor!, free!)));
 			if (path === undefined) return chosen;
 			this.#commit(chosen, path, branch && freeIsTo, branch && !freeIsTo);
 			connected.add(pointKey(free!.point));
@@ -660,7 +679,7 @@ class Router {
 			const wire = this.#input.wires[index]!;
 			/* Both ends already sit on the tree, whose own copper never blocks a point
 			   search, so a path between them always exists. */
-			const path = this.#search(unit, [wire.from.escape], wire.to.escape, [], index, 'point');
+			const path = this.#search(unit, [wire.from.escape], wire.to.escape, [], index, 'point', undefined, axesOf(wire.from, wire.to));
 			/* v8 ignore next */
 			if (path === undefined) return index;
 			this.#commit(index, path, false, false);
@@ -732,7 +751,8 @@ class Router {
 		avoid: readonly Copper[],
 		wireIndex: number,
 		mode: 'tree' | 'point',
-		connected: ReadonlySet<string> = new Set()
+		connected: ReadonlySet<string> = new Set(),
+		axes: Axes = [0, 0, 0]
 	): IPoint[] | undefined {
 		let box = { minX: target.x, minY: target.y, maxX: target.x, maxY: target.y };
 		for (const source of sources) {
@@ -753,18 +773,18 @@ class Router {
 			maxY: Math.max(box.maxY, this.#canvas.maxY)
 		};
 		let area = window;
-		let found = this.#searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, this.#input.states ?? MAX_ROUTER_STATES);
+		let found = this.#searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, this.#input.states ?? MAX_ROUTER_STATES, axes);
 		/* Nothing in the window: widen to the whole canvas before giving up. */
 		if (found === undefined) {
 			area = whole;
-			found = this.#searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, this.#input.states ?? MAX_ROUTER_STATES);
+			found = this.#searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, this.#input.states ?? MAX_ROUTER_STATES, axes);
 		}
 		if (found === undefined) return undefined;
 		/* A path that pays history or contact may be dearer than a way round the
 		   window could not see; during negotiation that is the whole point. */
 		if (found.priced) {
 			area = whole;
-			const wide = this.#searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, this.#input.states ?? MAX_ROUTER_STATES)!;
+			const wide = this.#searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, this.#input.states ?? MAX_ROUTER_STATES, axes)!;
 			if (wide.cost < found.cost) found = wide;
 		}
 		/*
@@ -776,7 +796,7 @@ class Router {
 		 * look rather than a flood.
 		 */
 		if (found.crossings > 0 && found.crossings <= MAX_AVOIDABLE_CROSSINGS) {
-			const better = this.#searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, CROSS, 1_000 + found.expanded);
+			const better = this.#searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, CROSS, 1_000 + found.expanded, axes);
 			if (better !== undefined && better.crossings < found.crossings) return better.path;
 		}
 		return found.path;
@@ -792,7 +812,8 @@ class Router {
 		mode: 'tree' | 'point',
 		connected: ReadonlySet<string>,
 		crossCost: number,
-		cap: number
+		cap: number,
+		axes: Axes
 	): { path: IPoint[]; crossings: number; expanded: number; cost: number; priced: boolean } | undefined {
 		const xs = axisCoordinates(this.#specialsX, window.minX, window.maxX);
 		const ys = axisCoordinates(this.#specialsY, window.minY, window.maxY);
@@ -889,6 +910,19 @@ class Router {
 			else if (mode === 'tree' && piece.unit === unit.index && (!piece.stub || connected.has(pointKey(piece.a)))) mark(piece, true, false);
 		}
 		for (const piece of avoid) mark(piece, false, true);
+		/* The ends this search joins may only be entered at their escape points:
+		   never along their own stubs, from behind. */
+		for (const piece of this.#unitCopper[unit.index]!) {
+			if (!piece.stub || (!sameAs(piece.b, target) && !(mode === 'point' && sameAs(piece.b, sources[0]!)))) continue;
+			const vertical = piece.a.x === piece.b.x;
+			const [along, line] = vertical ? [ys, col(piece.a.x)] : [xs, row(piece.a.y)];
+			const [from, to] = vertical ? [piece.a.y, piece.b.y] : [piece.a.x, piece.b.x];
+			for (let index = lowerBound(along, Math.min(from, to)); index < along.length && along[index]! <= Math.max(from, to); index += 1) {
+				if (along[index] === to) continue;
+				const cell = vertical ? index * width + line : line * width + index;
+				s.node[cell] = s.node[cell]! | AVOID;
+			}
+		}
 		/* Fixed diagonal wires of other nets: any lattice edge touching one is occupied. */
 		for (const fixed of this.#fixed.query(window)) {
 			if (fixed.net === unit.net) continue;
@@ -953,18 +987,41 @@ class Router {
 
 		/* Manhattan distance plus the bends still unavoidable from this heading — a
 		   lower bound that stays consistent, so A* remains exact. */
+		const [, end, facing] = axes;
 		const heuristic = (cell: number, direction: number): number => {
 			const c = cell % width;
 			const r = (cell - c) / width;
 			const dx = xs[c]! - target.x;
 			const dy = ys[r]! - target.y;
-			const bends = direction === 0 ? (dx !== 0 && dy !== 0 ? 1 : 0) : direction === 1 ? (dy !== 0 ? 1 : 0) : dx !== 0 ? 1 : 0;
+			if (dx === 0 && dy === 0) return 0;
+			let bends: number;
+			if (end === 0) {
+				bends = direction === 0 ? (dx !== 0 && dy !== 0 ? 1 : 0) : direction === 1 ? (dy !== 0 ? 1 : 0) : dx !== 0 ? 1 : 0;
+			} else {
+				/*
+				 * The target pin is entered from in front, along its axis, or from the
+				 * side at the price of a bend; never from behind, where its own stub
+				 * and body are. `ahead` is how far in front of the escape point this
+				 * cell lies, `aside` how far off its line. These are the bends the
+				 * cheapest such path needs in open space, so the bound stays exact.
+				 */
+				const ahead = (end === 1 ? dx : dy) * facing;
+				const aside = end === 1 ? dy : dx;
+				const along = direction === end;
+				const across = direction !== 0 && !along;
+				if (aside === 0) bends = ahead > 0 ? (across ? 1 : 0) : along ? 4 : 3;
+				else if (ahead >= 0) bends = along ? 2 : 1;
+				else bends = across ? 3 : 2;
+			}
 			return Math.abs(dx) + Math.abs(dy) + bends * BEND;
 		};
+		/* A point search sets off along its pin's axis; leaving the escape point
+		   across it is a bend, like any other. */
+		const heading = mode === 'point' ? axes[0] : 0;
 		for (const cell of startCells) {
-			const state = cell * 3;
+			const state = cell * 3 + heading;
 			s.relax(state, -1, 0);
-			s.push(state, 0, heuristic(cell, 0));
+			s.push(state, 0, heuristic(cell, heading));
 		}
 		const contact = this.#contact;
 		let expanded = 0;
@@ -1046,7 +1103,11 @@ class Router {
 				}
 				const nextFlags = s.node[next]!;
 				if ((nextFlags & AVOID) !== 0) continue;
-				if (next === targetCell && (nextFlags & (OTHER_H | OTHER_V | OTHER_END)) !== 0) penalty += contact;
+				if (next === targetCell) {
+					if ((nextFlags & (OTHER_H | OTHER_V | OTHER_END)) !== 0) penalty += contact;
+					/* Arriving across the pin's axis is a bend at the escape point. */
+					if (axes[1] !== 0 && nextDirection !== axes[1]) cost += BEND;
+				}
 				if (penalty > 0) {
 					if (penalty === Number.POSITIVE_INFINITY) continue;
 					cost += penalty;
@@ -1068,6 +1129,11 @@ class Router {
 		/* Whatever the path cost beyond its length, bends and crossings was
 		   history or contact. */
 		let plain = Math.max(0, path.length - 2) * BEND + s.crossings[found]! * crossCost;
+		if (path.length > 1) {
+			const axis = (a: IPoint, b: IPoint): number => (a.y === b.y ? 1 : 2);
+			if (heading !== 0 && axis(path[0]!, path[1]!) !== heading) plain += BEND;
+			if (axes[1] !== 0 && axis(path.at(-2)!, path.at(-1)!) !== axes[1]) plain += BEND;
+		}
 		for (let step = 1; step < path.length; step += 1) plain += Math.abs(path[step]!.x - path[step - 1]!.x) + Math.abs(path[step]!.y - path[step - 1]!.y);
 		const cost = s.g[found]!;
 		return { path, crossings: s.crossings[found]!, expanded, cost, priced: cost > plain };

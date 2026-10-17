@@ -347,7 +347,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(SCHEMATIC_OBSTACLE_CLEARANCE).toBe(12);
 		expect(obstacleBounds).toEqual({ minX: 196, minY: 90, maxX: 304, maxY: 150 });
 		expect(routeConnection(connection, components)).toMatchObject({
-			d: 'M 92 120 H 104 V 76 H 396 V 120 H 408'
+			d: 'M 92 120 H 196 V 76 H 304 V 120 H 408'
 		});
 		expect(() => componentObstacleRectangle(obstacle, -1)).toThrow(/finite non-negative/);
 		expect(() => componentObstacleRectangle(obstacle, Number.NaN)).toThrow(/finite non-negative/);
@@ -422,7 +422,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		 * lane one pitch clear of the occupied channel is a far better answer than
 		 * the trip to the canvas edge that obstacle-derived lanes alone could offer.
 		 */
-		expect(separated[1]!.d).toBe('M 72 180 H 84 V 168 H 536 V 180 H 548');
+		expect(separated[1]!.d).toBe('M 72 180 H 96 V 168 H 536 V 180 H 548');
 	});
 
 	test('adds one bridge arc to the later non-junction orthogonal trace', () => {
@@ -570,9 +570,9 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		const left = terminal('L', -50, 120);
 		const right = terminal('R', 750, 120);
 		const topA = terminal('TA', 300, 20, 'down');
-		const bottomA = terminal('BA', 300, 220, 'up');
+		const bottomA = terminal('BA', 300, 220, 'down');
 		const topB = terminal('TB', 304, 20, 'down');
-		const bottomB = terminal('BB', 304, 220, 'up');
+		const bottomB = terminal('BB', 304, 220, 'down');
 		/* Close beside the left wire, but well below the crossing. */
 		const topC = terminal('TC', 296, 170, 'down');
 		const bottomC = terminal('BC', 296, 320, 'up');
@@ -604,8 +604,8 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		/* The left wire bulges into open space at full radius; the right one may
 		   only use half the gap to its neighbour, so the arcs never touch. */
 		expect(routes[2]!.d).toBe('M -8 120 H 708');
-		expect(routes[0]!.d).toBe('M 300 62 V 115 A 5 5 0 0 0 300 125 V 262');
-		expect(routes[1]!.d).toBe('M 304 62 V 118 A 2 2 0 0 0 304 122 V 262');
+		expect(routes[0]!.d).toBe('M 300 62 V 115 A 5 5 0 0 0 300 125 V 178');
+		expect(routes[1]!.d).toBe('M 304 62 V 118 A 2 2 0 0 0 304 122 V 178');
 		expect(routes[1]!.points).toContainEqual({ x: 302, y: 120 });
 	});
 
@@ -697,7 +697,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(() => routeConnections([{ ...base, curve: 'line' }, bezier], components)).toThrow(
 			/Separate nets touch or cross/
 		);
-		expect(routeConnections([base, bezier], components)[0]!.d).toBe('M 92 120 H 104 V -24 H 396 V 120 H 408');
+		expect(routeConnections([base, bezier], components)[0]!.d).toBe('M 92 120 H 196 V -24 H 304 V 120 H 408');
 		const routed = routeConnections(
 			[
 				{ ...base, net: 'SHARED' },
@@ -790,8 +790,8 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		);
 		expect(sharedColumn[0]!.d).not.toBe(sharedColumn[1]!.d);
 		expect(sharedColumn.map((route) => route.d)).toEqual([
-			'M 300 42 V 70 H 288 V 370 H 300 V 342',
-			'M 300 122 V 150 H 312 V 450 H 300 V 422'
+			'M 300 42 V 108 H 288 V 370 H 300 V 342',
+			'M 300 122 V 336 H 312 V 450 H 300 V 422'
 		]);
 		expect(() =>
 			routeConnections(
@@ -942,9 +942,9 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		const left = terminal('L', 50, 120);
 		const right = terminal('R', 450, 120);
 		const topLeft = terminal('TL', 94, 20, 'down');
-		const bottomLeft = terminal('BL', 94, 220, 'up');
+		const bottomLeft = terminal('BL', 94, 220, 'down');
 		const topRight = terminal('TR', 406, 20, 'down');
-		const bottomRight = terminal('BR', 406, 220, 'up');
+		const bottomRight = terminal('BR', 406, 220, 'down');
 		const connection = (from: string, to: string): SchematicConnection => ({
 			from: { componentId: from, port: 'out' },
 			to: { componentId: to, port: 'in' },
@@ -965,8 +965,8 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		/* Bridges belong to the vertical runs, so the horizontal wire keeps one
 		   command even when crossings sit right at both of its ends. */
 		expect(routes.map((route) => route.d)).toEqual([
-			'M 94 62 V 115 A 5 5 0 0 0 94 125 V 262',
-			'M 406 62 V 115 A 5 5 0 0 0 406 125 V 262',
+			'M 94 62 V 115 A 5 5 0 0 0 94 125 V 178',
+			'M 406 62 V 115 A 5 5 0 0 0 406 125 V 178',
 			'M 92 120 H 408'
 		]);
 	});

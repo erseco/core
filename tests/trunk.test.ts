@@ -96,7 +96,7 @@ describe('routing', () => {
 		expect(result.svg).toContain('data-wire-trunk="to"');
 		/* Drawn from R2 towards the tap, so the endpoint dot every signal wire
 		   ends in is the junction; no separate junction dot is needed. */
-		expect(traces(result.svg)[2]).toBe('M 192 300 H 216 V 100');
+		expect(traces(result.svg)[2]).toBe('M 192 300 H 204 V 200');
 		expect(junctions(result.svg)).toEqual([]);
 	});
 
@@ -135,7 +135,7 @@ describe('routing', () => {
 			].join('\n'),
 			{ bounds: { width: 700, height: 560 }, title: 'bridged', mode: 'full' }
 		);
-		expect(traces(result.svg)[2]).toBe('M 432 100 V 177 A 5 5 0 0 0 432 187 V 300 H 458');
+		expect(traces(result.svg)[2]).toBe('M 432 100 V 195 A 5 5 0 0 0 432 205 V 300 H 458');
 		expect(junctions(result.svg)).toEqual(['432,100']);
 	});
 
@@ -150,7 +150,7 @@ describe('routing', () => {
 			].join('\n'),
 			{ ...FENCE, mode: 'full' }
 		);
-		expect(traces(result.svg)[1]).toBe('M 192 100 H 396 V 300 H 408');
+		expect(traces(result.svg)[1]).toBe('M 192 100 H 204 V 300 H 408');
 		expect(junctions(result.svg)).toEqual([]);
 	});
 
@@ -193,7 +193,7 @@ describe('routing', () => {
 		const result = compileSchematic(`${lines.join('\n')}\nY.out -> R6.in #blue [ortho trunk]`, fence);
 		expect(result.routing.attempts).toBe(0);
 		expect(result.routing.nudged).toBe(false);
-		expect(traces(result.svg).at(-1)).toMatch(/^M 122 1800 H 156 V 1665 A .* V 880$/);
+		expect(traces(result.svg).at(-1)).toMatch(/^M 122 1800 H 216 V 1665 A .* V 880$/);
 	});
 
 	test('wires of other nets do not spend the tap budget', () => {

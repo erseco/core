@@ -242,8 +242,8 @@ N4.out -> N5.out #blue [ortho]`;
 			[...svg.matchAll(/schematic-trace[^"]*" d="([^"]*)"/g)].map((match) => match[1])
 		).toEqual([
 			'M 122 480 H 134 V 412 H 280 V 438',
-			'M 480 422 V 450 H 462 V 412 H 280',
-			'M 538 780 H 526 V 212 H 280 V 238'
+			'M 480 422 V 450 H 298 V 412 H 280',
+			'M 538 780 H 510 V 212 H 280 V 238'
 		]);
 		/* The two wires into N2.in are one net: the second joins the first at a
 		   dot, clear of the pin, instead of running its own lead into it. Every

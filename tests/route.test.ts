@@ -231,7 +231,7 @@ describe('search', () => {
 		expect(result.failed).toBeUndefined();
 	});
 
-	test('pins that coincide route through the lattice, not the shortcut', () => {
+	test('pins that coincide loop round rather than through each other', () => {
 		const result = routeWires({
 			bounds,
 			obstacles: [],
@@ -239,9 +239,26 @@ describe('search', () => {
 			fixed: [],
 			attempts: 1
 		});
-		expect(units(result.wires[0]!.points)).toEqual([
-			[50, 50],
-			[50, 50]
+		/* Neither pin may be passed through on the way to the other, so the wire
+		   loops round rather than collapsing onto the pins. */
+		expect(result.failed).toBeUndefined();
+		expect(units(result.wires[0]!.points).slice(1, -1).some(([x, y]) => x === 50 && y === 50)).toBe(false);
+	});
+
+	test('facing pins whose escape points coincide meet there when the shortcut is refused', () => {
+		/* An earlier wire's label lies over the line between the pins, so the
+		   straight shortcut is refused and the search starts on its own target. */
+		const label = { minX: 114 * U, minY: 95 * U, maxX: 122 * U, maxY: 105 * U };
+		const result = routeWires({
+			bounds,
+			obstacles: [],
+			wires: [wire(pin(3, 20, 250), pin(4, 380, 250), 2, { label: () => label }), wire(pin(1, 100, 100, 112, 100), pin(2, 124, 100, 112, 100), 1)],
+			fixed: [],
+			attempts: 1
+		});
+		expect(units(result.wires[1]!.points)).toEqual([
+			[100, 100],
+			[124, 100]
 		]);
 	});
 
@@ -249,15 +266,16 @@ describe('search', () => {
 		/* Found by search: the cheapest place for the last two branches is the
 		   same point on the first wire, which would make a cross. */
 		const group = { group: 0, joinFrom: true, joinTo: true };
-		const root = pin(1, 196, 100, 184, 100);
+		const root = pin(1, 52, 148, 64, 148);
 		const result = routeWires({
 			bounds,
 			obstacles: [],
 			wires: [
-				wire(root, pin(2, 208, 244, 208, 232), 1, group),
-				wire(root, pin(3, 160, 136, 160, 124), 1, group),
-				wire(root, pin(4, 100, 112, 100, 124), 1, group),
-				wire(root, pin(5, 160, 52, 160, 40), 1, group)
+				wire(root, pin(2, 304, 148, 292, 148), 1, group),
+				wire(root, pin(3, 88, 100, 88, 112), 1, group),
+				wire(root, pin(4, 100, 52, 100, 64), 1, group),
+				wire(root, pin(5, 208, 220, 208, 208), 1, group),
+				wire(root, pin(6, 148, 196, 136, 196), 1, group)
 			],
 			fixed: [],
 			attempts: 1
