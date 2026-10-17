@@ -4,8 +4,10 @@
  * The fixture was recorded from the 0.8.0 build: for each kind and variant, the
  * names the parser accepted, the canonical terminal each one addresses, and
  * where that terminal sits, rounded to the milli-unit 1.0 draws on. A name not
- * listed was rejected. One entry differs on purpose: 0.8 resolved reset.out1 to
- * the reset's input, and 1.0 resolves it to the output.
+ * listed was rejected. Two entries differ on purpose: 0.8 resolved reset.out1 to
+ * the reset's input, and 1.0 resolves it to the output; and a qgate carrying a
+ * parameter is sized to its text's measured width, which is narrower than 0.8's
+ * estimate, so its two terminals sit closer in.
  */
 import { describe, expect, test } from 'vitest';
 

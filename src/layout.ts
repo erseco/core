@@ -10,7 +10,7 @@
  * @packageDocumentation
  */
 import { fmt, fromMilli, inflate, overlaps, contains, roundDiv, segmentContact, toMilli, type IPoint, type IRect } from './geom.js';
-import { mathLabelTextWidth } from './math-label.js';
+import { mathLabelTextWidthAt } from './math-label.js';
 import { resolveSchematicLimits, SCHEMATIC_LIMITS } from './limits.js';
 import { Buckets, compact, MAX_ROUTER_STATES, routeWires, type RouterFixed, type RouterObstacle, type RouterWire } from './route.js';
 import { canonicalName, halfExtents, placedPorts, resolvePlaced, turnOf, type PlacedPort } from './symbols/index.js';
@@ -115,8 +115,8 @@ const DESIGNATOR_BASELINE_GAP = 10;
 const LABEL_BASELINE_GAP = 19;
 const TEXT_ASCENT_GUTTER = 12;
 const TEXT_DESCENT_GUTTER = 5;
-const TEXT_ADVANCE = 7;
-const CONNECTION_TEXT_ADVANCE = 6;
+const TEXT_SIZE = 12;
+const CONNECTION_TEXT_SIZE = 11;
 const TEXT_HORIZONTAL_GUTTER = 4;
 /** Room a routed wire keeps from component text, beyond its gutters, in milli-units. */
 const TEXT_WIRE_CLEARANCE = 4_000;
@@ -274,8 +274,8 @@ export function componentTextAnchors(component: SchematicComponent): ComponentTe
 	return {
 		designatorY: -halfHeight - DESIGNATOR_BASELINE_GAP,
 		labelY: halfHeight + LABEL_BASELINE_GAP,
-		designatorWidth: mathLabelTextWidth(component.id, TEXT_ADVANCE),
-		labelWidth: mathLabelTextWidth(component.label, TEXT_ADVANCE)
+		designatorWidth: mathLabelTextWidthAt(component.id, TEXT_SIZE),
+		labelWidth: mathLabelTextWidthAt(component.label, TEXT_SIZE)
 	};
 }
 
@@ -362,7 +362,7 @@ function midpoint(points: readonly IPoint[]): IPoint {
 
 function labelRectAt(connection: SchematicConnection, point: IPoint): IRect | undefined {
 	if (connection.label === undefined) return undefined;
-	const half = toMilli(mathLabelTextWidth(connection.label, CONNECTION_TEXT_ADVANCE) / 2 + 3);
+	const half = toMilli(mathLabelTextWidthAt(connection.label, CONNECTION_TEXT_SIZE) / 2 + 3);
 	return { minX: point.x - half, minY: point.y - 20_000, maxX: point.x + half, maxY: point.y };
 }
 

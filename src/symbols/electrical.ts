@@ -33,8 +33,7 @@ import {
 	colorAttributes,
 	distributed,
 	enumOption,
-	fittedTextLength,
-	LENGTH_FIT,
+	fitText,
 	n,
 	named,
 	only,
@@ -446,7 +445,7 @@ const ic: KindDef<IcComponent> = {
 				const fitted = Math.max(8, component.bodyWidth / 2 - 10);
 				list.forEach((pin, index) => {
 					const y = distributed(index, list.length, h);
-					pins += `<path ${paint} d="M ${head} ${n(y)} H ${tail}" /><text class="schematic-pin-label" ${TEXT_PAINT} x="${labelX}" y="${n(y + 3_000)}" text-anchor="${side === 'left' ? 'start' : 'end'}" font-size="10" textLength="${fittedTextLength(pin, fitted, 4)}" ${LENGTH_FIT}>${escapeXml(pin)}</text>`;
+					pins += `<path ${paint} d="M ${head} ${n(y)} H ${tail}" /><text class="schematic-pin-label" ${TEXT_PAINT} x="${labelX}" y="${n(y + 3_000)}" text-anchor="${side === 'left' ? 'start' : 'end'}" font-size="10"${fitText(pin, fitted, 10)}>${escapeXml(pin)}</text>`;
 				});
 			} else {
 				const stub = n(sign * (h / 2 + 16_000));
@@ -456,14 +455,14 @@ const ic: KindDef<IcComponent> = {
 				const fitted = Math.max(8, component.bodyHeight / 2 - 10);
 				list.forEach((pin, index) => {
 					const x = n(distributed(index, list.length, w));
-					pins += `<path ${paint} d="M ${x} ${head} V ${tail}" /><text class="schematic-pin-label" ${TEXT_PAINT} x="${x}" y="${labelY}" text-anchor="start" font-size="10" textLength="${fittedTextLength(pin, fitted, 4)}" ${LENGTH_FIT} transform="rotate(${side === 'top' ? 90 : -90} ${x} ${labelY})">${escapeXml(pin)}</text>`;
+					pins += `<path ${paint} d="M ${x} ${head} V ${tail}" /><text class="schematic-pin-label" ${TEXT_PAINT} x="${x}" y="${labelY}" text-anchor="start" font-size="10"${fitText(pin, fitted, 10)} transform="rotate(${side === 'top' ? 90 : -90} ${x} ${labelY})">${escapeXml(pin)}</text>`;
 				});
 			}
 		}
 		return `<rect ${paint} x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}" rx="3" />${pins}`;
 	},
 	inner: (component) =>
-		`<text class="schematic-gate-symbol" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="12" textLength="${fittedTextLength(component.label, component.bodyWidth - 12, 7)}" ${LENGTH_FIT}>${renderMathLabelTspans(component.label)}</text>`
+		`<text class="schematic-gate-symbol" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="12"${fitText(component.label, component.bodyWidth - 12, 12)}>${renderMathLabelTspans(component.label)}</text>`
 };
 
 export const ELECTRICAL_KINDS: Readonly<Record<string, KindDef<never>>> = {

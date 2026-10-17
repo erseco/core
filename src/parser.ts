@@ -610,9 +610,10 @@ function analyze(source: string, fence: SchematicFence, reporter: Reporter): Sch
 				});
 			} catch (error) {
 				reporter.report(error, 'placement');
+				poisoned.add(id);
 				continue;
 			}
-			pending.push({ component, relations });
+			pending.push({ component, relations, spans: syntax.references.map((reference) => span(line, reference)) });
 		}
 	}
 	if (components.length === 0 && !reporter.failed) {
@@ -622,12 +623,8 @@ function analyze(source: string, fence: SchematicFence, reporter: Reporter): Sch
 
 	let placements: ReturnType<typeof resolvePlacements> = [];
 	if (pending.length > 0) {
-		try {
-			placements = resolvePlacements(components, pending, limits.placementDepth);
-		} catch (error) {
-			reporter.report(error, 'placement');
-			return undefined;
-		}
+		placements = resolvePlacements(components, pending, limits.placementDepth, (error) => reporter.report(error));
+		if (reporter.failed) return undefined;
 		for (const entry of pending) {
 			const offences = boundsOffences(entry.component, normalized);
 			if (offences !== undefined) reporter.report(new SchematicSyntaxError(offences, entry.component.line, undefined, 'geometry'));

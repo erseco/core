@@ -1,9 +1,11 @@
 /** Micro-math tokenization, Unicode translation, escaping, and baseline-reset verification. */
 import { describe, expect, test } from 'vitest';
 import {
+	MATH_LABEL_FONT_FAMILY,
 	mathLabelGlyphLength,
 	mathLabelText,
 	mathLabelTextWidth,
+	mathLabelTextWidthAt,
 	parseMathLabel,
 	renderMathLabelTspans
 } from '../src/math-label.js';
@@ -75,5 +77,37 @@ describe('micro math labels', () => {
 		expect(mathLabelTextWidth(`e${zeroWidthMarks}`)).toBe(mathLabelTextWidth('e'));
 		expect(mathLabelTextWidth('ᄀ〈⺀가豈︐！😀')).toBeGreaterThan(mathLabelTextWidth('abcdefgh'));
 		expect(mathLabelTextWidth('WWW')).toBeGreaterThan(mathLabelTextWidth('iii'));
+	});
+});
+
+describe('measured text width', () => {
+	test('matches Arial advances, scripts at their scale, accents as their base letter', () => {
+		/* Each value is the rendered width in Arial to within kerning; see the
+		   width table in math-label.ts for where the advances come from. */
+		expect(mathLabelTextWidthAt('Microcontroller', 12)).toBe(78.72);
+		expect(mathLabelTextWidthAt('GND', 12)).toBe(26.64);
+		expect(mathLabelTextWidthAt('1 k\\Omega', 12)).toBe(25.08);
+		expect(mathLabelTextWidthAt('V_{out}', 12)).toBe(19.8);
+		expect(mathLabelTextWidthAt('Zürich', 12)).toBe(33.36);
+		expect(mathLabelTextWidthAt('é', 12)).toBe(6.72);
+		expect(mathLabelTextWidthAt('日本', 10)).toBe(20);
+		/* Anything else takes a digit's width. */
+		expect(mathLabelTextWidthAt('☃', 12)).toBe(6.72);
+		expect(mathLabelTextWidthAt('Order', 13, true)).toBe(34.711);
+	});
+
+	test('the advance-based form scales the font size in proportion', () => {
+		expect(mathLabelTextWidth('GND')).toBe(26.64);
+		expect(mathLabelTextWidth('GND', 14)).toBe(53.28);
+		expect(MATH_LABEL_FONT_FAMILY.startsWith('Arial, Helvetica')).toBe(true);
+	});
+
+	test('repeated parses share one frozen result, and the cache stays bounded', () => {
+		const first = parseMathLabel('R_{load}');
+		expect(parseMathLabel('R_{load}')).toBe(first);
+		expect(Object.isFrozen(first) && Object.isFrozen(first[0])).toBe(true);
+		for (let index = 0; index < 1100; index += 1) parseMathLabel(`label ${index}`);
+		expect(parseMathLabel('R_{load}')).not.toBe(first);
+		expect(parseMathLabel('R_{load}')).toEqual(first);
 	});
 });

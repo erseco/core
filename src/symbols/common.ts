@@ -13,7 +13,7 @@
  * @module
  */
 import { fmt, roundDiv, toMilli } from '../geom.js';
-import { mathLabelTextWidth } from '../math-label.js';
+import { mathLabelTextWidthAt } from '../math-label.js';
 import { escapeXml } from '../xml.js';
 import {
 	SCHEMATIC_ORIENTATIONS,
@@ -88,9 +88,12 @@ export function named(source: LocalPort, id: string): LocalPort {
 	return { ...source, id };
 }
 
-/** Bounded `textLength` for a fitted label, in diagram units. */
-export function fittedTextLength(value: string, maximum: number, advance: number): number {
-	return Math.max(1, Math.min(Math.ceil(mathLabelTextWidth(value, advance)), maximum));
+/**
+ * Attributes that fit text into `maximum` units: nothing when it already fits,
+ * so text is never stretched, and a compressing `textLength` when it would not.
+ */
+export function fitText(value: string, maximum: number, fontSize: number): string {
+	return mathLabelTextWidthAt(value, fontSize) <= maximum ? '' : ` textLength="${Math.max(1, Math.floor(maximum))}" ${LENGTH_FIT}`;
 }
 
 /** Class, fill and safe style attributes for one colour. */

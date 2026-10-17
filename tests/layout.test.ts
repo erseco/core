@@ -392,9 +392,9 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			{ width: 640, height: 320 }
 		);
 		expect(connectionLabelRectangle(labeled, labelRoutes[0]!)).toEqual({
-			minX: 265.35,
+			minX: 257.235,
 			minY: 80,
-			maxX: 334.65,
+			maxX: 342.765,
 			maxY: 100
 		});
 		/* The vertical trace keeps clear of the label box rather than running
@@ -1244,8 +1244,8 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(componentTextAnchors(topComponent)).toEqual({
 			designatorY: -28,
 			labelY: 37,
-			designatorWidth: 14,
-			labelWidth: 21
+			designatorWidth: 15.36,
+			labelWidth: 20.76
 		});
 		expect(componentRectangle(topComponent).minY).toBe(0);
 		expect(componentRectangle(bottomComponent).maxY).toBe(100);
@@ -1257,10 +1257,10 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		).toThrow(/geometry exceeds/);
 
 		const wideLabel = '12345678901234567890';
-		const left = parseSchematic(`resistor:R5 "${wideLabel}" at (74, 50) #amber`, edgeFence);
+		const left = parseSchematic(`resistor:R5 "${wideLabel}" at (71.2, 50) #amber`, edgeFence);
 		expect(componentRectangle(findComponent(left, 'R5')).minX).toBe(0);
 		expect(() =>
-			parseSchematic(`resistor:R6 "${wideLabel}" at (73, 50) #amber`, edgeFence)
+			parseSchematic(`resistor:R6 "${wideLabel}" at (71.1, 50) #amber`, edgeFence)
 		).toThrow(/geometry exceeds/);
 	});
 
@@ -1282,7 +1282,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 describe('public layout helpers', () => {
 	const color = token;
 
-	test('keep the 0.x numbers', () => {
+	test('keep the 0.x numbers, with gate boxes sized to their measured text', () => {
 		expect([0, 1, 2].map((index) => distributedCoordinate(index, 3, 40))).toEqual([-10, 0, 10]);
 		expect(distributedCoordinate(0, 1, 40)).toBe(0);
 		const gate: ClassicalGateComponent = { kind: 'and', id: 'G', label: 'G', x: 0, y: 0, color, line: 1, inputs: 5, outputs: 2, standard: 'ieee' };
@@ -1290,9 +1290,9 @@ describe('public layout helpers', () => {
 		expect(classicalGateHeight({ ...gate, inputs: 1, outputs: 1 })).toBe(48);
 		expect(quantumGateDimensions({ kind: 'hadamard', id: 'Q', label: 'H', x: 0, y: 0, color, line: 1 } as never)).toEqual({ bodyWidth: 50, bodyHeight: 50, stubExtent: 48 });
 		expect(quantumGateDimensions({ kind: 'qgate', id: 'Q', label: 'Rot', x: 0, y: 0, color, line: 1, parameter: 'theta/2', phase: 'pi' } as never)).toEqual({
-			bodyWidth: 69,
+			bodyWidth: 50.8,
 			bodyHeight: 80,
-			stubExtent: 57.5
+			stubExtent: 48.4
 		});
 	});
 

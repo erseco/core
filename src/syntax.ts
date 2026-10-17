@@ -49,6 +49,8 @@ export interface RelativeComponentSyntax {
 	readonly id: Token;
 	readonly label: Token;
 	readonly relations: readonly SchematicPlacementRelation[];
+	/** Where each relation's reference — `REF` or `REF.port` — sits on the line. */
+	readonly references: readonly Token[];
 	readonly tail: Token;
 }
 
@@ -71,8 +73,8 @@ const COMPONENT = new RegExp(`^(${ID}):(${ID})\\s+"([^"]+)"\\s+at\\s+\\((${DECIM
 const HEAD = new RegExp(`^(${ID}):(${ID})\\s+"([^"]+)"\\s+(.+)$`, 'd');
 const CONNECTION = new RegExp(`^(${ID})\\.(${PORT})\\s*->\\s*(${ID})\\.(${PORT})\\s+(.+)$`, 'd');
 /* One relation each, sticky so it matches exactly where the last one ended. */
-const DIRECTION = new RegExp(`(right-of|left-of|above|below)\\s+(${ID})(?:\\.(${PORT}))?(?:\\s+by\\s+(${DECIMAL}))?(?:\\s+|$)`, 'y');
-const ALIGNMENT = new RegExp(`(aligned-x|aligned-y)\\s+with\\s+(${ID})(?:\\.(${PORT}))?(?:\\s+|$)`, 'y');
+const DIRECTION = new RegExp(`(right-of|left-of|above|below)\\s+(${ID})(?:\\.(${PORT}))?(?:\\s+by\\s+(${DECIMAL}))?(?:\\s+|$)`, 'yd');
+const ALIGNMENT = new RegExp(`(aligned-x|aligned-y)\\s+with\\s+(${ID})(?:\\.(${PORT}))?(?:\\s+|$)`, 'yd');
 
 const SPACE = /\s/;
 
@@ -82,8 +84,15 @@ const token = (match: RegExpExecArray, group: number): Token => {
 };
 
 /** Consume a placement clause relation by relation from `start`; whatever is left is the tail. */
-function placement(text: string, start: number): { relations: SchematicPlacementRelation[]; tail: number } {
+function placement(text: string, start: number): { relations: SchematicPlacementRelation[]; references: Token[]; tail: number } {
 	const relations: SchematicPlacementRelation[] = [];
+	const references: Token[] = [];
+	/* `REF` or `REF.port`: from the reference group to the end of the port group, if any. */
+	const reference = (match: RegExpExecArray): Token => {
+		const start = match.indices![2]![0];
+		const end = (match.indices![3] ?? match.indices![2]!)[1];
+		return { text: text.slice(start, end), start, end };
+	};
 	let cursor = start;
 	for (;;) {
 		DIRECTION.lastIndex = cursor;
@@ -95,13 +104,15 @@ function placement(text: string, start: number): { relations: SchematicPlacement
 				...(direction[3] === undefined ? {} : { port: direction[3] }),
 				...(direction[4] === undefined ? {} : { gap: Number(direction[4]) })
 			});
+			references.push(reference(direction));
 			cursor = DIRECTION.lastIndex;
 			continue;
 		}
 		ALIGNMENT.lastIndex = cursor;
 		const alignment = ALIGNMENT.exec(text);
-		if (alignment === null) return { relations, tail: cursor };
+		if (alignment === null) return { relations, references, tail: cursor };
 		relations.push({ kind: alignment[1] as SchematicPlacementRelation['kind'], ref: alignment[2]!, ...(alignment[3] === undefined ? {} : { port: alignment[3] }) });
+		references.push(reference(alignment));
 		cursor = ALIGNMENT.lastIndex;
 	}
 }
@@ -128,6 +139,7 @@ export function scanDeclaration(text: string): DeclarationSyntax | undefined {
 				id: token(head, 2),
 				label: token(head, 3),
 				relations: clause.relations,
+				references: clause.references,
 				tail: { text: text.slice(clause.tail), start: clause.tail, end: text.length }
 			};
 		}

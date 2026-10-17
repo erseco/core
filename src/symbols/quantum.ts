@@ -4,7 +4,7 @@
  *
  * @module
  */
-import { mathLabelTextWidth, renderMathLabelTspans } from '../math-label.js';
+import { mathLabelTextWidthAt, renderMathLabelTspans } from '../math-label.js';
 import {
 	NAMED_QUANTUM_GATE_KINDS,
 	SchematicSyntaxError,
@@ -15,10 +15,9 @@ import {
 	colorAttributes,
 	count,
 	enumOption,
-	fittedTextLength,
+	fitText,
 	includesValue,
 	indexed,
-	LENGTH_FIT,
 	n,
 	only,
 	orientation,
@@ -46,8 +45,8 @@ export function trackCoordinate(index: number, tracks: number): number {
 export function gateDimensions(component: QuantumGateComponent): { bodyWidth: number; bodyHeight: number; stubExtent: number } {
 	const details = [component.parameter, component.phase, component.matrix].filter((value): value is string => value !== undefined && value !== '');
 	let widest = 16;
-	if (details.length > 0 && component.kind === 'qgate') widest = mathLabelTextWidth(component.label, 8);
-	for (const detail of details) widest = Math.max(widest, mathLabelTextWidth(detail, 7));
+	if (details.length > 0 && component.kind === 'qgate') widest = mathLabelTextWidthAt(component.label, 14);
+	for (const detail of details) widest = Math.max(widest, mathLabelTextWidthAt(detail, 10));
 	const bodyWidth = Math.max(50, Math.min(104, widest + 20));
 	return { bodyWidth, bodyHeight: 50 + details.length * 15, stubExtent: bodyWidth / 2 + 23 };
 }
@@ -96,7 +95,7 @@ const operator: KindDef<QuantumGateComponent> = {
 		const text = rows
 			.map(
 				(value, index) =>
-					`<text class="${index === 0 ? 'schematic-gate-symbol' : 'schematic-quantum-detail'}" ${TEXT_PAINT} x="0" y="${start + index * 15}" text-anchor="middle" font-size="${index === 0 ? 14 : 10}" textLength="${fittedTextLength(value, bodyWidth - 12, index === 0 ? 7 : 5)}" ${LENGTH_FIT}>${renderMathLabelTspans(value)}</text>`
+					`<text class="${index === 0 ? 'schematic-gate-symbol' : 'schematic-quantum-detail'}" ${TEXT_PAINT} x="0" y="${start + index * 15}" text-anchor="middle" font-size="${index === 0 ? 14 : 10}"${fitText(value, bodyWidth - 12, index === 0 ? 14 : 10)}>${renderMathLabelTspans(value)}</text>`
 			)
 			.join('');
 		return `<g ${colorAttributes(component.color)}>${text}</g>`;

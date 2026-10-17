@@ -14,6 +14,7 @@ import {
 	parseSchematic,
 	PLACEMENT_HORIZONTAL_GAP,
 	PLACEMENT_VERTICAL_GAP,
+	resolvePlacements,
 	SCHEMATIC_PLACEMENT_KINDS,
 	type SchematicFence
 } from '../src/index.js';
@@ -474,5 +475,33 @@ describe('diagnostics', () => {
 				limits: { placementDepth: 8, placmentDepth: 8 } as never
 			})
 		).toThrow(/Unknown compiler limit placmentDepth/);
+	});
+});
+
+describe('placement arithmetic and the public resolver', () => {
+	const fence = { bounds: { width: 800, height: 500 }, title: 'placement' } as const;
+
+	test('a relation and its mirror image land exactly opposite each other', () => {
+		const document = parseSchematic(
+			'resistor:R1 "a" at (400, 250) #amber\nport:P "p" right-of R1 by 33.3335 #amber\nport:Q "q" left-of R1 by 33.3335 #amber',
+			fence
+		);
+		const [, p, q] = document.components;
+		/* 125.3335 either side of x = 400, rounded half away from zero both ways. */
+		expect([p!.x, q!.x]).toEqual([525.334, 274.666]);
+	});
+
+	test('a gap too small to print as a decimal is still read', () => {
+		const document = parseSchematic('resistor:R1 "a" at (400, 250) #amber\nport:P "p" right-of R1 by 0.0000001 #amber', fence);
+		/* Edge to edge: R1's right edge at 446, P's left edge 46 from its origin. */
+		expect(document.components[1]!.x).toBe(492);
+	});
+
+	test('without a reporter the first problem is thrown, as before', () => {
+		const document = parseSchematic('resistor:R1 "a" at (400, 250) #amber', fence);
+		const lonely = { ...document.components[0]!, id: 'P', line: 2 };
+		expect(() =>
+			resolvePlacements([...document.components, lonely], [{ component: lonely, relations: [{ kind: 'right-of', ref: 'NOPE' }] }], 8)
+		).toThrow('Line 2: P is placed relative to NOPE, which the document never declares.');
 	});
 });

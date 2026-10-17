@@ -44,22 +44,22 @@ const mutants = [
 	{
 		name: "an unconstrained axis inherits the first reference",
 		file: "src/placement.ts",
-		from: "\t\tlet position: SchematicPoint = { x: seed.originX, y: seed.originY };",
-		to: "\t\tlet position: SchematicPoint = { x: 0, y: 0 };",
+		from: "\t\tlet position: IPoint = { x: seed.originX, y: seed.originY };",
+		to: "\t\tlet position: IPoint = { x: 0, y: 0 };",
 		tests: ["tests/placement.test.ts"]
 	},
 	{
 		name: "a direction measures from the reference body, not its origin",
 		file: "src/placement.ts",
-		from: "\t\tconst rectangle = componentRectangle(component);\n\t\treturn { ...rectangle, originX: component.x, originY: component.y };",
-		to: "\t\treturn {\n\t\t\tminX: component.x,\n\t\t\tmaxX: component.x,\n\t\t\tminY: component.y,\n\t\t\tmaxY: component.y,\n\t\t\toriginX: component.x,\n\t\t\toriginY: component.y\n\t\t};",
+		from: "\t\treturn { ...milliRect(componentRectangle(component)), originX: toMilli(component.x), originY: toMilli(component.y) };",
+		to: "\t\treturn { minX: toMilli(component.x), maxX: toMilli(component.x), minY: toMilli(component.y), maxY: toMilli(component.y), originX: toMilli(component.x), originY: toMilli(component.y) };",
 		tests: ["tests/placement.test.ts"]
 	},
 	{
 		name: "the two axis gap defaults stay distinct",
 		file: "src/placement.ts",
-		from: "\t\t\t: PLACEMENT_VERTICAL_GAP);",
-		to: "\t\t\t: PLACEMENT_HORIZONTAL_GAP);",
+		from: "PLACEMENT_HORIZONTAL_GAP : PLACEMENT_VERTICAL_GAP) * 1000",
+		to: "PLACEMENT_HORIZONTAL_GAP : PLACEMENT_HORIZONTAL_GAP) * 1000",
 		tests: ["tests/placement.test.ts"]
 	},
 	{
@@ -436,8 +436,8 @@ const mutants = [
 	{
 		name: "a relation is read only where the last one ended",
 		file: "src/syntax.ts",
-		from: "const DIRECTION = new RegExp(`(right-of|left-of|above|below)\\\\s+(${ID})(?:\\\\.(${PORT}))?(?:\\\\s+by\\\\s+(${DECIMAL}))?(?:\\\\s+|$)`, 'y');",
-		to: "const DIRECTION = new RegExp(`(right-of|left-of|above|below)\\\\s+(${ID})(?:\\\\.(${PORT}))?(?:\\\\s+by\\\\s+(${DECIMAL}))?(?:\\\\s+|$)`, 'g');",
+		from: "(?:\\\\s+by\\\\s+(${DECIMAL}))?(?:\\\\s+|$)`, 'yd');",
+		to: "(?:\\\\s+by\\\\s+(${DECIMAL}))?(?:\\\\s+|$)`, 'gd');",
 		tests: ["tests/syntax.test.ts"]
 	},
 	{

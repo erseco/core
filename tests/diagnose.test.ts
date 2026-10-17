@@ -152,6 +152,40 @@ describe('ordering and spans', () => {
 	});
 });
 
+describe('placement', () => {
+	test('every broken relation is reported once, at its reference, and nothing placed against it is blamed', () => {
+		const diagnostics = diagnoseSchematic(
+			doc(
+				'resistor:R1 "a" right-of X1 #amber',
+				'resistor:R2 "b" right-of R1 #amber',
+				'resistor:R3 "c" at (100, 100) #amber',
+				'port:A "a" right-of B #blue',
+				'port:B "b" right-of A #blue',
+				'port:C "c" below A #blue',
+				'port:D "d" right-of E #blue',
+				'port:E "e" right-of D #blue',
+				'port:F "f" right-of R3.nope #blue'
+			),
+			fence
+		);
+		expect(diagnostics.map(({ line, column, endColumn, message }) => [line, column, endColumn, message.split('.')[0]])).toEqual([
+			[1, 26, 28, 'R1 is placed relative to X1, which the document never declares'],
+			[4, 21, 22, 'Placement cycle: A -> B -> A'],
+			[7, 21, 22, 'Placement cycle: D -> E -> D'],
+			[9, 21, 28, 'R3 has no terminal named nope, so F cannot be placed against it']
+		]);
+		expect(diagnostics.every((diagnostic) => diagnostic.code === 'placement')).toBe(true);
+	});
+
+	test('a chain past the depth budget is reported, and what hangs from it is not', () => {
+		const diagnostics = diagnoseSchematic(
+			doc('resistor:R1 "a" at (100, 100) #amber', 'resistor:R2 "b" below R1 #amber', 'resistor:R3 "c" below R2 #amber', 'resistor:R4 "d" right-of R3 #amber'),
+			{ ...fence, limits: { placementDepth: 1 } }
+		);
+		expect(diagnostics).toMatchObject([{ code: 'placement', line: 3, message: expect.stringContaining('R3 sits 2 placements deep') }]);
+	});
+});
+
 describe('connection options', () => {
 	test('a bus width must be a whole number of bits from 1 through 256', () => {
 		const base = 'port:A "A" at (100,100) #blue [width=8]\nport:B "B" at (400,100) #blue [width=8]\nA.out -> B.in #blue [ortho width=WIDTH]';

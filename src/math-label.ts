@@ -8,6 +8,7 @@
  * @packageDocumentation
  */
 
+import { fromMilli, toMilli } from './geom.js';
 import { escapeXml } from './xml.js';
 
 /** Visual baseline category assigned to one parsed label segment. */
@@ -131,6 +132,20 @@ function appendSegment(
  * @returns Coalesced immutable baseline segments with symbol commands expanded.
  */
 export function parseMathLabel(value: string): readonly MathLabelSegment[] {
+	const cached = parsed.get(value);
+	if (cached !== undefined) return cached;
+	const segments = Object.freeze(parse(value).map((segment) => Object.freeze(segment)));
+	/* A compile asks about each label several times — width, text, markup — so
+	   parses are kept; the cache is dropped whole rather than grown past a bound. */
+	if (parsed.size >= PARSE_CACHE_LIMIT) parsed.clear();
+	parsed.set(value, segments);
+	return segments;
+}
+
+const PARSE_CACHE_LIMIT = 1024;
+const parsed = new Map<string, readonly MathLabelSegment[]>();
+
+function parse(value: string): readonly MathLabelSegment[] {
 	const segments: MutableMathLabelSegment[] = [];
 	const braceStack: number[] = [];
 	const matchingBraces = new Map<number, number>();
@@ -256,52 +271,92 @@ export function mathLabelGlyphLength(value: string): number {
 }
 
 /**
- * Estimate deterministic text advance without browser font measurement.
+ * The font every width here is measured for. Arial, Helvetica, Liberation Sans
+ * and Arimo share these advances, so the estimate is the rendered width in any
+ * of them; the compiled SVG names this stack as its default.
+ */
+export const MATH_LABEL_FONT_FAMILY = "Arial, Helvetica, 'Liberation Sans', Arimo, sans-serif";
+
+/* Advances of the printable ASCII range, in hundredths of an em, measured from
+   Arial in Chromium; they match the published Helvetica metrics. */
+const ASCII_ADVANCE = [
+	28, 28, 36, 56, 56, 89, 67, 19, 33, 33, 39, 58, 28, 33, 28, 28, 56, 56, 56, 56, 56, 56, 56, 56, 56, 56, 28, 28, 58, 58, 58, 56, 102, 67, 67, 72, 72,
+	67, 61, 78, 72, 28, 50, 67, 56, 83, 72, 78, 67, 78, 72, 67, 61, 72, 67, 94, 67, 67, 61, 28, 28, 28, 47, 56, 33, 56, 56, 50, 56, 56, 28, 56, 56, 22,
+	22, 50, 22, 83, 56, 56, 56, 56, 33, 50, 28, 56, 50, 72, 50, 50, 50, 33, 26, 33, 58
+];
+/* The symbols a label is likely to hold beyond ASCII whose width differs from a
+   digit's, measured the same way; the rest are within 0.02 em of one. */
+const SYMBOL_ADVANCE: Readonly<Record<string, number>> = Object.freeze({
+	Δ: 67, '·': 33, '∞': 71, λ: 50, Ω: 75, ω: 78, φ: 65, π: 69, Σ: 62, '→': 100, σ: 62, '°': 40, '²': 33, '³': 33, '⊕': 72, '⟩': 37, '⟨': 37, '—': 100, '…': 100
+});
+/** Bold widens Arial's letters and digits by this much on average. */
+const BOLD_FACTOR = 1.043;
+
+/** One code point's advance in em. */
+function advance(character: string, codePoint: number): number {
+	if (codePoint >= 32 && codePoint < 127) return ASCII_ADVANCE[codePoint - 32]! / 100;
+	const symbol = SYMBOL_ADVANCE[character];
+	if (symbol !== undefined) return symbol / 100;
+	if (
+		(codePoint >= 0x0300 && codePoint <= 0x036f) ||
+		(codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+		(codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+		(codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+		(codePoint >= 0xfe20 && codePoint <= 0xfe2f) ||
+		codePoint === 0x200d
+	) {
+		return 0;
+	}
+	if (
+		codePoint >= 0x1100 &&
+		(codePoint <= 0x115f ||
+			(codePoint >= 0x2329 && codePoint <= 0x232a) ||
+			(codePoint >= 0x2e80 && codePoint <= 0xa4cf) ||
+			(codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+			(codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+			(codePoint >= 0xfe10 && codePoint <= 0xfe6f) ||
+			(codePoint >= 0xff00 && codePoint <= 0xff60) ||
+			(codePoint >= 0x1f300 && codePoint <= 0x1faff))
+	) {
+		return 1;
+	}
+	/* An accented Latin letter is as wide as its base letter. */
+	const base = character.normalize('NFD').charCodeAt(0);
+	return base >= 32 && base < 127 ? ASCII_ADVANCE[base - 32]! / 100 : 0.56;
+}
+
+/**
+ * Rendered width of a math label at a font size, in viewBox units.
  *
- * Combining marks consume no additional width, East Asian and emoji code
- * points consume two cells, and nested scripts retain their parsed font scale.
- * The result deliberately overestimates ambiguous mathematical glyphs slightly
- * so labels are fitted before they can collide with neighboring geometry.
+ * Measured advances for the stack in {@link MATH_LABEL_FONT_FAMILY}, scripts at
+ * their parsed scale; combining marks take no width and East Asian and emoji
+ * code points one em. Kerning is ignored; the result is exact to the
+ * milli-unit.
  *
  * @param value - Raw micro-math label.
- * @param cellAdvance - Width of one ordinary glyph in viewBox units.
- * @returns Estimated rendered width in viewBox units.
+ * @param fontSize - Font size in viewBox units.
+ * @param bold - Whether the text is set bold.
  */
-export function mathLabelTextWidth(value: string, cellAdvance = 7): number {
-	let cells = 0;
+export function mathLabelTextWidthAt(value: string, fontSize: number, bold = false): number {
+	let em = 0;
 	for (const segment of parseMathLabel(value)) {
 		const scale = segment.fontScale ?? (segment.kind === 'text' ? 1 : 0.7);
-		for (const character of segment.value) {
-			const codePoint = character.codePointAt(0)!;
-			if (
-				(codePoint >= 0x0300 && codePoint <= 0x036f) ||
-				(codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
-				(codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
-				(codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
-				(codePoint >= 0xfe20 && codePoint <= 0xfe2f) ||
-				codePoint === 0x200d
-			) {
-				continue;
-			}
-			const doubleWidth =
-				codePoint >= 0x1100 &&
-				(codePoint <= 0x115f ||
-					(codePoint >= 0x2329 && codePoint <= 0x232a) ||
-					(codePoint >= 0x2e80 && codePoint <= 0xa4cf) ||
-					(codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
-					(codePoint >= 0xf900 && codePoint <= 0xfaff) ||
-					(codePoint >= 0xfe10 && codePoint <= 0xfe6f) ||
-					(codePoint >= 0xff00 && codePoint <= 0xff60) ||
-					(codePoint >= 0x1f300 && codePoint <= 0x1faff));
-			let widthFactor = 1;
-			if (doubleWidth) widthFactor = 2;
-			else if ('MWmw@%&'.includes(character)) widthFactor = 1.55;
-			else if ('ilI.,:;!|\'` '.includes(character)) widthFactor = 0.55;
-			else if (codePoint === 0x03a9 || codePoint === 0x221e) widthFactor = 1.35;
-			cells += widthFactor * scale;
-		}
+		for (const character of segment.value) em += advance(character, character.codePointAt(0)!) * scale;
 	}
-	return cells * cellAdvance;
+	/* Rounded to the milli-unit every geometry downstream works in. */
+	return fromMilli(toMilli(em * fontSize * (bold ? BOLD_FACTOR : 1)));
+}
+
+/**
+ * Rendered width of a math label, in viewBox units.
+ *
+ * @param value - Raw micro-math label.
+ * @param cellAdvance - The advance of an average glyph: 7 is 12-unit text, and
+ *   other values scale the font size in proportion.
+ * @returns The width at a font size of `cellAdvance * 12 / 7`.
+ */
+export function mathLabelTextWidth(value: string, cellAdvance = 7): number {
+	return mathLabelTextWidthAt(value, (cellAdvance * 12) / 7);
 }
 
 /**

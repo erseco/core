@@ -30,7 +30,7 @@ import {
 } from './limits.js';
 import { assertParsedSchematicDocument } from './parser.js';
 import { parsedSchematicRoutes } from './route-cache.js';
-import { colorAttributes, LENGTH_FIT, TEXT_PAINT } from './symbols/common.js';
+import { colorAttributes, TEXT_PAINT } from './symbols/common.js';
 import { definition, placedPorts, turnOf } from './symbols/index.js';
 import {
 	QUANTUM_GATE_KINDS,
@@ -48,7 +48,7 @@ import {
 	type SchematicSignalMarker,
 	type SchemdOutputMode
 } from './types.js';
-import { mathLabelText, renderMathLabelTspans } from './math-label.js';
+import { MATH_LABEL_FONT_FAMILY, mathLabelText, renderMathLabelTspans } from './math-label.js';
 import { escapeXml } from './xml.js';
 
 /**
@@ -673,7 +673,7 @@ function componentMarkup(
 	 */
 	const labels = isUmlComponent(component)
 		? ''
-		: `<text class="schematic-designator" x="0" y="${svgNumber(anchors.designatorY)}" textLength="${svgNumber(anchors.designatorWidth)}" ${LENGTH_FIT}>${id}</text><text class="schematic-label" x="0" y="${svgNumber(anchors.labelY)}" textLength="${svgNumber(anchors.labelWidth)}" ${LENGTH_FIT}>${renderedLabel}</text>`;
+		: `<text class="schematic-designator" x="0" y="${svgNumber(anchors.designatorY)}">${id}</text><text class="schematic-label" x="0" y="${svgNumber(anchors.labelY)}">${renderedLabel}</text>`;
 	/* Without a stylesheet the paint travels on one inherited group instead of
 	   on each label — same pixels, one shared declaration per component. */
 	const externalLabels =
@@ -799,7 +799,7 @@ export function renderSchematicSized(
 	/* Any full-mode output contains focusable descendants, so the root must not flatten them. */
 	const svgRole = hooks ? 'group' : 'img';
 	writer.append(
-		`<figure class="schematic-frame"${hooks ? ' data-schematic' : ''}><svg class="schematic-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${normalized.bounds.width} ${normalized.bounds.height}" width="${normalized.bounds.width}" height="${normalized.bounds.height}" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" role="${svgRole}" aria-labelledby="${titleId} ${descriptionId}" preserveAspectRatio="xMidYMid meet"><title id="${titleId}">${title}</title><desc id="${descriptionId}">${description}</desc>${definitions === '' ? '' : `<defs>${definitions}</defs>`}${styles ? `<rect class="schematic-surface" width="100%" height="100%" /><rect class="schematic-grid" width="100%" height="100%" fill="url(#${gridId})" />` : ''}<g class="schematic-vectors">`
+		`<figure class="schematic-frame"${hooks ? ' data-schematic' : ''}><svg class="schematic-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${normalized.bounds.width} ${normalized.bounds.height}" width="${normalized.bounds.width}" height="${normalized.bounds.height}" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" font-family="${MATH_LABEL_FONT_FAMILY}" role="${svgRole}" aria-labelledby="${titleId} ${descriptionId}" preserveAspectRatio="xMidYMid meet"><title id="${titleId}">${title}</title><desc id="${descriptionId}">${description}</desc>${definitions === '' ? '' : `<defs>${definitions}</defs>`}${styles ? `<rect class="schematic-surface" width="100%" height="100%" /><rect class="schematic-grid" width="100%" height="100%" fill="url(#${gridId})" />` : ''}<g class="schematic-vectors">`
 	);
 	if (wireHooks) {
 		for (const [index, connection] of document.connections.entries()) {

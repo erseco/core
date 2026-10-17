@@ -41,7 +41,8 @@ describe('UML diagrams', () => {
 			attributes: ['- id: UUID', '- balance: Money'],
 			operations: ['+ credit(amount: Money): void', '+ debit(amount: Money): bool']
 		});
-		expect(account.bodyWidth).toBeGreaterThan(200);
+		/* As wide as its longest row, `+ debit(amount: Money): void`, plus padding. */
+		expect(account.bodyWidth).toBe(183.48);
 		expect(account.bodyHeight).toBe(130);
 		expect(document.connections).toMatchObject([
 			{ relation: 'generalization', markerEnd: 'triangle', dashed: false },

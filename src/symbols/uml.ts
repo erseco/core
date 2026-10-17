@@ -4,7 +4,7 @@
  * @module
  */
 import { toMilli } from '../geom.js';
-import { mathLabelTextWidth, renderMathLabelTspans } from '../math-label.js';
+import { mathLabelTextWidthAt, renderMathLabelTspans } from '../math-label.js';
 import {
 	SchematicSyntaxError,
 	type UmlActorComponent,
@@ -38,9 +38,11 @@ function dimension(value: string | undefined, fallback: number, name: string, li
 	return parsed;
 }
 
-function widest(list: readonly string[]): number {
-	let value = 0;
-	for (const row of list) value = Math.max(value, mathLabelTextWidth(row, 8));
+/** The widest of a box's bold 13-unit title, 11-unit stereotype and 12-unit rows. */
+function widest(title: string, rows: readonly string[], stereotype?: string): number {
+	let value = mathLabelTextWidthAt(title, 13, true);
+	if (stereotype !== undefined) value = Math.max(value, mathLabelTextWidthAt(`«${stereotype}»`, 11));
+	for (const row of rows) value = Math.max(value, mathLabelTextWidthAt(row, 12));
 	return value;
 }
 
@@ -196,7 +198,7 @@ const uml: KindDef<UmlComponent> = {
 			if (stereotype !== undefined && (stereotype === '' || stereotype.length > 128)) {
 				throw new SchematicSyntaxError('stereotype must contain 1 through 128 characters.', line);
 			}
-			const calculated = Math.max(120, widest([common.label, stereotype ?? '', ...attributes, ...operations]) + 24);
+			const calculated = Math.max(120, widest(common.label, [...attributes, ...operations], stereotype) + 24);
 			const component: UmlClassComponent = {
 				kind: kind as UmlClassComponent['kind'],
 				...common,
@@ -211,7 +213,7 @@ const uml: KindDef<UmlComponent> = {
 		if (kind === 'state') {
 			only(options, ['details', 'width'], line);
 			const details = rows(options.get('details'), 'details', line);
-			const calculated = Math.max(112, widest([common.label, ...details]) + 28);
+			const calculated = Math.max(112, widest(common.label, details) + 28);
 			return {
 				kind: 'state',
 				...common,
@@ -226,7 +228,7 @@ const uml: KindDef<UmlComponent> = {
 		}
 		if (SIZED_KINDS.has(kind)) {
 			only(options, ['width', 'height'], line);
-			const defaultWidth = Math.max(kind === 'usecase' ? 112 : 96, mathLabelTextWidth(common.label, 8) + 28);
+			const defaultWidth = Math.max(kind === 'usecase' ? 112 : 96, mathLabelTextWidthAt(common.label, 12) + 28);
 			const defaultHeight = kind === 'lifeline' ? 180 : kind === 'activation' ? 96 : kind === 'usecase' ? 56 : 64;
 			return {
 				kind: kind as UmlSizedComponent['kind'],
