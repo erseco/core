@@ -588,6 +588,15 @@ export function routeSchematicConnections(
 			manual.push({ owner: component.id, rect });
 		}
 	}
+	/* A free pin is a point no wire may pass through: one that did would read as
+	   joined to it. Text-like, so it adds no lattice lines of its own. */
+	const wired = new Set(connections.flatMap((connection) => [`${connection.from.componentId}.${connection.from.port}`, `${connection.to.componentId}.${connection.to.port}`]));
+	for (const [index, component] of list.entries()) {
+		for (const port of placedPorts(component)) {
+			if (wired.has(`${component.id}.${port.id}`)) continue;
+			obstacles.push({ owner: index, kind: 'label', rect: inflate({ minX: port.point.x, minY: port.point.y, maxX: port.point.x, maxY: port.point.y }, 1) });
+		}
+	}
 	const occupied = new Buckets<{ owner: string; rect: IRect }>();
 	for (const entry of manual) occupied.add(entry, entry.rect);
 	const identity = contactIdentities(connections);

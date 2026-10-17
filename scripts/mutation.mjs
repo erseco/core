@@ -254,8 +254,8 @@ const mutants = [
 	{
 		name: "a contested location costs every net, touching or not",
 		file: "src/route.ts",
-		from: "let cost = g + length + s.history[next]!;",
-		to: "let cost = g + length;",
+		from: "let cost = g + length * (soft === 2 ? 2 : 1) + history;",
+		to: "let cost = g + length * (soft === 2 ? 2 : 1);",
 		tests: ["tests/route.test.ts"]
 	},
 	{
@@ -467,6 +467,20 @@ const mutants = [
 		from: "if (along[index] === to) continue;",
 		to: "continue;",
 		tests: ["tests/layout.test.ts", "tests/route.test.ts", "tests/regressions.test.ts"]
+	},
+	{
+		name: "a free pin is never passed through",
+		file: "src/layout.ts",
+		from: "\t\t\tif (wired.has(`${component.id}.${port.id}`)) continue;",
+		to: "\t\t\tcontinue;",
+		tests: ["tests/regressions.test.ts"]
+	},
+	{
+		name: "a wire runs inside its own component's clearance only at a price",
+		file: "src/route.ts",
+		from: "let cost = g + length * (soft === 2 ? 2 : 1) + history;",
+		to: "let cost = g + length + history;",
+		tests: ["tests/regressions.test.ts", "tests/layout.test.ts", "tests/trunk.test.ts"]
 	}
 ];
 

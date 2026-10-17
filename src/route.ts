@@ -283,6 +283,7 @@ class Scratch {
 	crossings = new Int32Array(0);
 	previous = new Int32Array(0);
 	stamp = new Int32Array(0);
+	paid = new Uint8Array(0);
 	epoch = 0;
 	heapState = new Int32Array(0);
 	heapF = new Float64Array(0);
@@ -301,6 +302,7 @@ class Scratch {
 			this.crossings = new Int32Array(cells * 3);
 			this.previous = new Int32Array(cells * 3);
 			this.stamp = new Int32Array(cells * 3);
+			this.paid = new Uint8Array(cells * 3);
 			this.epoch = 0;
 		} else {
 			this.node.fill(0, 0, cells);
@@ -395,12 +397,14 @@ class Scratch {
 		return g < known || (g === known && crossings < this.crossings[state]!);
 	}
 
-	relax(state: number, from: number, g: number, crossings = 0): void {
+	relax(state: number, from: number, g: number, crossings = 0, paid = 0): void {
 		this.g[state] = g;
 		this.crossings[state] = crossings;
 		this.previous[state] = from;
 		this.stamp[state] = this.epoch;
+		this.paid[state] = paid;
 	}
+
 }
 
 const scratch = new Scratch();
@@ -440,7 +444,11 @@ class Router {
 			extent.maxX = Math.max(extent.maxX, x);
 			extent.maxY = Math.max(extent.maxY, y);
 		};
+		/* Text edges are not lattice lines: their positions come from glyph
+		   widths, and a wire hugging one would land on an arbitrary decimal. Wires
+		   keep to pitch lines outside text instead. */
 		for (const obstacle of input.obstacles) {
+			if (obstacle.kind === 'label') continue;
 			note(obstacle.rect.minX, obstacle.rect.minY);
 			note(obstacle.rect.maxX, obstacle.rect.maxY);
 		}
@@ -838,14 +846,12 @@ class Router {
 			return index < height && ys[index] === y ? index : -1;
 		};
 
-		/* Obstacles. A component owning one of this unit's terminals — or whose
-		   clearance ring holds one of its escape points — blocks only with its body. */
+		/* Obstacles. Every component keeps its clearance, the unit's own included:
+		   escape points sit on that ring's boundary, which blocks nothing. Only a
+		   component whose ring holds one of the unit's escape points — pins packed
+		   closer than two clearances — blocks with its body alone. */
 		const relaxed = new Set<number>();
 		const unitWires = unit.wires.map((index) => this.#input.wires[index]!);
-		for (const wire of unitWires) {
-			relaxed.add(wire.from.owner);
-			relaxed.add(wire.to.owner);
-		}
 		for (const wire of unitWires) {
 			for (const terminal of [wire.from, wire.to]) {
 				const at = terminal.escape;
@@ -855,7 +861,8 @@ class Router {
 				}
 			}
 		}
-		const block = (rect: IRect): void => {
+		/* 1 blocks an edge; 2 lets it be used at a surcharge, and never weakens a 1. */
+		const block = (rect: IRect, value = 1): void => {
 			if (rect.maxX <= window.minX || rect.minX >= window.maxX || rect.maxY <= window.minY || rect.minY >= window.maxY) {
 				/* Still blocks edges lying exactly on the window edge from outside? No: an
 				   edge must pass through the interior, which lies outside the window. */
@@ -871,7 +878,10 @@ class Router {
 				const s0 = Math.max(0, lowerBound(spans, spanLow + 1) - 1);
 				const s1 = Math.min(spans.length - 2, lowerBound(spans, spanHigh) - 1);
 				for (let line = lowerBound(lines, lineLow + 1); line < lowerBound(lines, lineHigh); line += 1) {
-					for (let span = s0; span <= s1; span += 1) blocked[vertical ? span * width + line : line * width + span] = 1;
+					for (let span = s0; span <= s1; span += 1) {
+						const edge = vertical ? span * width + line : line * width + span;
+						if (value === 1 || blocked[edge] === 0) blocked[edge] = value;
+					}
 				}
 			}
 		};
@@ -880,12 +890,16 @@ class Router {
 		   still holding one, whoever's it is, cannot wall that pin in. */
 		const escapes = unitWires.flatMap((wire) => [wire.from.escape, wire.to.escape]);
 		const holdsEscape = (r: IRect): boolean => escapes.some((at) => at.x > r.minX && at.x < r.maxX && at.y > r.minY && at.y < r.maxY);
+		/* The unit's own components keep their clearance where they can: a wire
+		   may run inside its own component's ring, as stacked pins demand, but
+		   pays for it, so it does only when there is no room outside. */
+		const own = new Set(unitWires.flatMap((wire) => [wire.from.owner, wire.to.owner]));
 		for (const obstacle of this.#obstacles.query(window)) {
 			if (obstacle.kind === 'body') {
-				if (relaxed.has(obstacle.owner)) block(obstacle.rect);
+				if (relaxed.has(obstacle.owner) || own.has(obstacle.owner)) block(obstacle.rect);
 			} else if (obstacle.kind === 'label') {
 				if (!holdsEscape(obstacle.rect)) block(obstacle.rect);
-			} else if (!relaxed.has(obstacle.owner)) block(obstacle.rect);
+			} else if (!relaxed.has(obstacle.owner)) block(obstacle.rect, own.has(obstacle.owner) ? 2 : 1);
 		}
 		for (const label of this.#labelsIn(window)) if (!holdsEscape(label.rect)) block(label.rect);
 
@@ -1057,42 +1071,45 @@ class Router {
 				let edge: number;
 				let length: number;
 				let occ: number;
+				let soft: number;
 				const nextDirection = step < 2 ? 1 : 2;
 				if (step === 0) {
 					if (c === 0) continue;
 					next = cell - 1;
 					edge = next;
-					if (s.blockH[edge]) continue;
+					soft = s.blockH[edge]!;
 					occ = s.occH[edge]!;
 					length = xs[c]! - xs[c - 1]!;
 				} else if (step === 1) {
 					if (c + 1 === width) continue;
 					next = cell + 1;
 					edge = cell;
-					if (s.blockH[edge]) continue;
+					soft = s.blockH[edge]!;
 					occ = s.occH[edge]!;
 					length = xs[c + 1]! - xs[c]!;
 				} else if (step === 2) {
 					if (r === 0) continue;
 					next = cell - width;
 					edge = next;
-					if (s.blockV[edge]) continue;
+					soft = s.blockV[edge]!;
 					occ = s.occV[edge]!;
 					length = ys[r]! - ys[r - 1]!;
 				} else {
 					if (r + 1 === height) continue;
 					next = cell + width;
 					edge = cell;
-					if (s.blockV[edge]) continue;
+					soft = s.blockV[edge]!;
 					occ = s.occV[edge]!;
 					length = ys[r + 1]! - ys[r]!;
 				}
-				/* Never run along the unit's own copper, or into an unjoined stub. */
-				if (occ === 2) continue;
+				/* Never through a blocked edge, along the unit's own copper, or into an
+				   unjoined stub. */
+				if (soft === 1 || occ === 2) continue;
 				/* Contested locations cost their history to every net, touching or not
 				   (PathFinder): a net with somewhere else to go leaves them to the nets
 				   that have nowhere else. */
-				let cost = g + length + s.history[next]!;
+				const history = s.history[next]!;
+				let cost = g + length * (soft === 2 ? 2 : 1) + history;
 				let crossed = s.crossings[state]!;
 				let penalty = 0;
 				if (occ === 1) penalty += contact;
@@ -1121,7 +1138,7 @@ class Router {
 				}
 				const nextState = next * 3 + nextDirection;
 				if (!s.improves(nextState, cost, crossed)) continue;
-				s.relax(nextState, state, cost, crossed);
+				s.relax(nextState, state, cost, crossed, penalty > 0 || history > 0 ? 1 : s.paid[state]!);
 				s.push(nextState, cost, cost + heuristic(next, nextDirection));
 			}
 		}
@@ -1133,17 +1150,7 @@ class Router {
 			reversed.push({ x: xs[c]!, y: ys[(cell - c) / width]! });
 		}
 		const path = compact(reversed.reverse());
-		/* Whatever the path cost beyond its length, bends and crossings was
-		   history or contact. */
-		let plain = Math.max(0, path.length - 2) * BEND + s.crossings[found]! * crossCost;
-		if (path.length > 1) {
-			const axis = (a: IPoint, b: IPoint): number => (a.y === b.y ? 1 : 2);
-			if (heading !== 0 && axis(path[0]!, path[1]!) !== heading) plain += BEND;
-			if (axes[1] !== 0 && axis(path.at(-2)!, path.at(-1)!) !== axes[1]) plain += BEND;
-		}
-		for (let step = 1; step < path.length; step += 1) plain += Math.abs(path[step]!.x - path[step - 1]!.x) + Math.abs(path[step]!.y - path[step - 1]!.y);
-		const cost = s.g[found]!;
-		return { path, crossings: s.crossings[found]!, expanded, cost, priced: cost > plain };
+		return { path, crossings: s.crossings[found]!, expanded, cost: s.g[found]!, priced: s.paid[found] === 1 };
 	}
 
 	/** Find every location where copper of two different nets touches. */

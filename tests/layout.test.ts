@@ -299,7 +299,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			'M 0 100 C 121 100, 121 150, 242 150'
 		);
 		expect(routeConnection({ ...base, curve: 'ortho' }, components).d).toBe(
-			'M 0 100 H -12 V 168 H 254 V 150 H 242'
+			'M 0 100 H -12 V 48 H 254 V 150 H 242'
 		);
 		expect(() =>
 			routeConnection(
@@ -347,7 +347,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(SCHEMATIC_OBSTACLE_CLEARANCE).toBe(12);
 		expect(obstacleBounds).toEqual({ minX: 196, minY: 90, maxX: 304, maxY: 150 });
 		expect(routeConnection(connection, components)).toMatchObject({
-			d: 'M 92 120 H 196 V 76 H 304 V 120 H 408'
+			d: 'M 92 120 H 196 V 72 H 304 V 120 H 408'
 		});
 		expect(() => componentObstacleRectangle(obstacle, -1)).toThrow(/finite non-negative/);
 		expect(() => componentObstacleRectangle(obstacle, Number.NaN)).toThrow(/finite non-negative/);

@@ -262,6 +262,30 @@ describe('search', () => {
 		]);
 	});
 
+	test('a wire leaves its pin along the stub, never back over it', () => {
+		/* Found by search. The cheapest-looking path would leave A's escape point
+		   back along A's own stub and climb A's body edge from the pin itself. */
+		const part = (owner: number, x: number, y: number) => [
+			{ owner, kind: 'body', rect: { minX: (x - 42) * U, minY: (y - 16) * U, maxX: (x + 42) * U, maxY: (y + 16) * U } },
+			{ owner, kind: 'expanded', rect: { minX: (x - 54) * U, minY: (y - 28) * U, maxX: (x + 54) * U, maxY: (y + 28) * U } }
+		] as const;
+		const result = routeWires({
+			bounds,
+			obstacles: [...part(0, 296, 84), ...part(1, 200, 60)],
+			wires: [wire(pin(0, 254, 84, 242, 84), pin(1, 242, 60, 254, 60), 1)],
+			fixed: [],
+			attempts: 1
+		});
+		expect(units(result.wires[0]!.points)).toEqual([
+			[254, 84],
+			[242, 84],
+			[242, 76],
+			[254, 76],
+			[254, 60],
+			[242, 60]
+		]);
+	});
+
 	test('a tree never meets four ways at one point', () => {
 		/* Found by search: the cheapest place for the last two branches is the
 		   same point on the first wire, which would make a cross. */

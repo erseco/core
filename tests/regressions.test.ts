@@ -18,6 +18,7 @@ import {
 	inspectSchematic,
 	parseSchematic,
 	renderSchematic,
+	resolvePortPoint,
 	routeConnections,
 	SCHEMATIC_LIMITS,
 	SCHEMD_OUTPUT_MODES,
@@ -242,7 +243,7 @@ N4.out -> N5.out #blue [ortho]`;
 			[...svg.matchAll(/schematic-trace[^"]*" d="([^"]*)"/g)].map((match) => match[1])
 		).toEqual([
 			'M 122 480 H 134 V 412 H 280 V 438',
-			'M 480 422 V 450 H 298 V 412 H 280',
+			'M 480 422 V 450 H 310 V 412 H 280',
 			'M 538 780 H 510 V 212 H 280 V 238'
 		]);
 		/* The two wires into N2.in are one net: the second joins the first at a
@@ -690,5 +691,29 @@ C.out -> D.in #cyan [ortho]`;
 		const sorted = [...routing.congestion].sort((left, right) => left.x - right.x || left.y - right.y);
 		expect(routing.congestion).toEqual(sorted);
 		expect(new Set(routing.congestion.map((cell) => cell.x)).size).toBeGreaterThan(1);
+	});
+});
+
+describe('free pins', () => {
+	test('no routed wire passes through a pin nothing is wired to', () => {
+		/* C's top pin is free. Running along C's body edge is legal, but that edge
+		   holds the pin, and a wire over it would read as joined to it. */
+		const source = `port:A "A" at (70,100) #blue
+junction:J "junction" at (260,100) #cyan
+port:B "B" at (450,100) #blue [orientation=left]
+port:C "C" at (260,210) #cyan [orientation=up]
+A.out -> J.node #blue [ortho]
+J.node -> B.in #blue [ortho]
+J.node -> C.in #cyan [ortho]`;
+		const document = parseSchematic(source, { bounds: { width: 900, height: 540 }, title: 'free pins' });
+		const free = resolvePortPoint(document.components.find((component) => component.id === 'C')!, 'out');
+		const routes = routeConnections(document.connections, new Map(document.components.map((component) => [component.id, component])), { width: 900, height: 540 });
+		for (const route of routes) {
+			for (let step = 1; step < route.points.length; step += 1) {
+				const [a, b] = [route.points[step - 1]!, route.points[step]!];
+				const through = Math.min(a.x, b.x) <= free.x && free.x <= Math.max(a.x, b.x) && Math.min(a.y, b.y) <= free.y && free.y <= Math.max(a.y, b.y);
+				expect(through, `${route.d}`).toBe(false);
+			}
+		}
 	});
 });
