@@ -32,7 +32,7 @@
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"singleton/junction": {
-		"drawing": "5a0c83bf71f20069a9efcabe24e014ec6f563960413e18a8c6d2be7eea454c0d",
+		"drawing": "715d2582995c1c002f13c92c706c0e6090d6680bcb3c2faa083fa1d561c0df29",
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"singleton/testpoint": {
@@ -972,20 +972,20 @@
 		"evidence": "20cd938a2ea64f612b3523bc9219130c6fc66cd09b394ea38437488c0b8898b2"
 	},
 	"mode/default": {
-		"drawing": "b16c9afd0a2b603af658e705bce5ed9e1541c3ce28010c6c36aa6645febc7a8a",
-		"evidence": "067cd60726bfadf85ef6afa6fe1ca47d8477c04384b61ee07db4fdc5c3c597eb"
+		"drawing": "0bf073bebf166946915ce8c12c5c4a6ebe6a9289b08f99840a70dffac0248996",
+		"evidence": "87d7e144991af9eff2a7e59d54f4cbae2f2bb08a6a3c2eb41027df37a7ff24f8"
 	},
 	"mode/embedded-css": {
-		"drawing": "6d26d22e5470fce092d40478f88f73ec8603dbae633683961bae441d0103382b",
-		"evidence": "067cd60726bfadf85ef6afa6fe1ca47d8477c04384b61ee07db4fdc5c3c597eb"
+		"drawing": "39665c154773d0c69776595a654a3b88f5bd69e8863cd5ba92ddd134697eb8fa",
+		"evidence": "87d7e144991af9eff2a7e59d54f4cbae2f2bb08a6a3c2eb41027df37a7ff24f8"
 	},
 	"mode/full": {
-		"drawing": "988350edd83d905d0ffe4264f57a9eb5fe55e913297b4dc389a6a9e89243f146",
-		"evidence": "067cd60726bfadf85ef6afa6fe1ca47d8477c04384b61ee07db4fdc5c3c597eb"
+		"drawing": "cdb26e8a4c15ecc5977d029f24d42c5a5ad04dcd28ce98c45c47c647073d82ff",
+		"evidence": "87d7e144991af9eff2a7e59d54f4cbae2f2bb08a6a3c2eb41027df37a7ff24f8"
 	},
 	"mode/full+hooks": {
-		"drawing": "988350edd83d905d0ffe4264f57a9eb5fe55e913297b4dc389a6a9e89243f146",
-		"evidence": "067cd60726bfadf85ef6afa6fe1ca47d8477c04384b61ee07db4fdc5c3c597eb"
+		"drawing": "cdb26e8a4c15ecc5977d029f24d42c5a5ad04dcd28ce98c45c47c647073d82ff",
+		"evidence": "87d7e144991af9eff2a7e59d54f4cbae2f2bb08a6a3c2eb41027df37a7ff24f8"
 	},
 	"diagnostic/unknown-kind": {
 		"drawing": "b3e84f49dc49695a05e310fe49c9cbc536c3748cab1d6f4d0ede0b985b520841",
@@ -1056,8 +1056,8 @@
 		"evidence": "ba4937807874d02338a181f188bc5d8060a7fcf2fca060e6d897932ffb238641"
 	},
 	"trunk/fan-in": {
-		"drawing": "e2ebc22d40b5be6e2c9356692dcb723c65401d56189832c70e05843c03b0afeb",
-		"evidence": "64af367236d1d3c40781f26b283ab1c651841d5252b77e9ad9c5630e7705b6ca"
+		"drawing": "fbbeacd4ba06d10407e164636dd33f8c2a96de0ac55c244d6f742206ac13d3db",
+		"evidence": "66107c8e6b99080026b86b9f9307515f3ae6661ac58e43b2bf537c35a729551f"
 	},
 	"subcircuit/pair": {
 		"drawing": "4f2b7cfed867877da1ea9c4e2227ce86815b70e004efedcf0f9ea7a6c8834519",

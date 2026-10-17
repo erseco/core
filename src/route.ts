@@ -57,7 +57,8 @@ export const MAX_ROUTER_STATES = 2_000_000;
 /** An obstacle: `body` blocks the component's own wires; `expanded` and `label` block everyone else's. */
 export interface RouterObstacle {
 	readonly owner: number;
-	readonly kind: 'body' | 'expanded' | 'label';
+	/** `node`: a junction's dot, which its own wires meet at and every other net keeps out of. */
+	readonly kind: 'body' | 'node' | 'expanded' | 'label';
 	readonly rect: IRect;
 }
 
@@ -985,6 +986,8 @@ class Router {
 		for (const obstacle of this.#obstacles.query(window)) {
 			if (obstacle.kind === 'body') {
 				if (relaxed.has(obstacle.owner) || own.has(obstacle.owner)) block(obstacle.rect);
+			} else if (obstacle.kind === 'node') {
+				if (!own.has(obstacle.owner)) block(obstacle.rect);
 			} else if (obstacle.kind === 'label') {
 				if (!holdsEscape(obstacle.rect)) block(obstacle.rect);
 			} else if (!relaxed.has(obstacle.owner)) block(obstacle.rect, own.has(obstacle.owner) ? 2 : 1);

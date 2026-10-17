@@ -14,6 +14,7 @@ import { describe, expect, test } from 'vitest';
 import {
 	canonicalPortName,
 	compileSchematic,
+	componentTextAnchors,
 	connectionLabelPoint,
 	inspectSchematic,
 	parseSchematic,
@@ -873,5 +874,88 @@ C3.out -> C1.common #blue [ortho]`,
 			{ bounds: { width: 1200, height: 400 }, title: 'lead', mode: 'full' }
 		);
 		expect(traces(result.svg)[2]).toBe('M 220 200 H 200 V 96 H 132 V 250 H 180 V 222');
+	});
+});
+
+describe('junction parts', () => {
+	const traces = (svg: string) => [...svg.matchAll(/schematic-trace[^"]*" d="([^"]*)"/g)].map((match) => match[1]!);
+
+	test('wires written to a junction meet at it, straight, from any side', () => {
+		/* A junction's node was a pin with a lead pointing left and a no-branch
+		   ring around it, so only one wire reached it and the rest tapped that
+		   one nearby, with dots of their own. */
+		const result = compileSchematic(
+			`resistor:R1 "a" at (200, 160) #amber
+junction:N1 "N" at (360, 160) #amber
+resistor:R2 "b" at (520, 160) #amber
+capacitor:C1 "c" at (360, 280) #cyan [orientation=down]
+R1.out -> N1.node #amber [ortho]
+N1.node -> R2.in #amber [ortho]
+N1.node -> C1.in #amber [ortho]`,
+			{ bounds: { width: 700, height: 400 }, title: 'tee', mode: 'full' }
+		);
+		expect(traces(result.svg)).toEqual(['M 242 160 H 360', 'M 360 160 H 478', 'M 360 160 V 238']);
+		expect(result.svg).not.toContain('schematic-junction');
+	});
+
+	test('a junction sets its text beside the dot, clear of all four exits', () => {
+		const source = 'junction:N1 "V_{x}" at (300, 200) #amber';
+		const [component] = parseSchematic(source, fence).components;
+		expect(componentTextAnchors(component!)).toMatchObject({ designatorY: -27, labelY: -10, textX: 10 });
+		for (const mode of ['full', 'default'] as const) {
+			const svg = compileSchematic(source, { ...fence, mode }).svg;
+			expect(svg).toContain('<text class="schematic-designator" x="10" y="-27" style="text-anchor:start">N1</text>');
+			expect(svg).toMatch(/<text class="schematic-label" x="10" y="-10" style="text-anchor:start">/);
+		}
+		/* The text counts against the fence on the side it now sits. */
+		expect(() => parseSchematic('junction:N1 "V_{out}" at (980, 200) #amber', fence)).toThrow(
+			'Line 1: N1 geometry exceeds the declared 1000x700 bounds: extends 14 past x=1000; move N1 to x <= 966.'
+		);
+		/* Other parts keep their centred rows. */
+		expect(compileSchematic('resistor:R1 "r" at (300, 200) #amber', fence).svg).toContain('<text class="schematic-designator" x="0" y="-28">R1</text>');
+	});
+
+	test('another net never runs through a junction\'s dot', () => {
+		/* The junction's clearance ring gives way to C0.source, whose exit sits
+		   inside it; the dot itself still keeps the wire out. */
+		const result = compileSchematic(
+			`transistor:C0 "Q" at (220, 280) #cyan [type=nmos]
+junction:C2 "V_{out}" at (280, 300) #blue
+switch:C3 "S" at (460, 380) #blue [type=spdt]
+C3.normally-closed -> C0.source #blue [ortho]`,
+			{ bounds: { width: 800, height: 550 }, title: 'dot', mode: 'full' }
+		);
+		expect(traces(result.svg)).toEqual(['M 502 392 H 514 V 305 H 275 V 302 H 262']);
+	});
+
+	test('an amplifier with a feedback divider through junctions routes', () => {
+		/* Unroutable before: every wire at FB had to leave it leftwards through
+		   its own text. */
+		const result = compileSchematic(
+			`source:VIN "V_{in}" at (100, 230) #blue [type=voltage-ac orientation=up]
+resistor:R1 "10 k\\Omega" at (240, 160) #amber
+junction:N1 "V_{c}" at (360, 160) #amber
+capacitor:C1 "1 nF" at (360, 260) #cyan [orientation=down]
+amplifier:U1 "OPA" at (560, 173) #purple [type=opamp]
+junction:FB "V_{fb}" at (460, 290) #purple
+resistor:RF "100 k\\Omega" at (620, 290) #amber
+resistor:RG "10 k\\Omega" at (460, 360) #amber [orientation=down]
+junction:VOUT "V_{out}" at (740, 173) #emerald
+ground:G "0 V" at (360, 460) #slate
+VIN.positive -> R1.in #blue [ortho]
+R1.out -> N1.node #amber [ortho]
+N1.node -> U1.positive #amber [ortho]
+N1.node -> C1.in #cyan [ortho]
+U1.negative -> FB.node #purple [ortho]
+FB.node -> RF.in #purple [ortho]
+RF.out -> VOUT.node #emerald [ortho]
+U1.out -> VOUT.node #emerald [ortho]
+FB.node -> RG.in #purple [ortho]
+RG.out -> G.in #slate [ortho]
+C1.out -> G.in #slate [ortho]
+VIN.negative -> G.in #slate [ortho]`,
+			{ bounds: { width: 840, height: 540 }, title: 'filter', mode: 'full' }
+		);
+		expect(traces(result.svg).slice(2, 9)).toEqual(['M 360 160 H 512', 'M 360 160 V 218', 'M 512 186 H 460 V 290', 'M 460 290 H 578', 'M 662 290 H 740 V 173', 'M 608 173 H 740', 'M 460 290 V 318']);
 	});
 });

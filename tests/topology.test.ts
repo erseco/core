@@ -151,8 +151,10 @@ L.out -> R.in #blue [line]`,
 	});
 
 	test('includes transformed marker footprints in component collision checks', () => {
+		/* Below the line, whose marker reaches it; its text sits up and to the
+		   right of the dot, clear of the line. */
 		const declarations = `port:L "L" at (80,100) #blue
-junction:J "J" at (140,110) #amber
+junction:J "J" at (140,90) #amber
 port:R "R" at (520,100) #blue [orientation=left]`;
 		expect(() =>
 			parseSchematic(`${declarations}\nL.out -> R.in #blue [line marker-start=triangle]`, fence)
