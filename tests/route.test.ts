@@ -68,6 +68,30 @@ describe('negotiation', () => {
 		expect(routeWires(input)).toEqual(result);
 	});
 
+	test('a rerouted tree branches only from the copper it has now', () => {
+		/* A is a tree: a short wire to (100, 40), then a branch to the far pin
+		   that first takes row 100 and must give it up. Once torn up, its old
+		   row is gone: a branch off it would start in mid-air. */
+		const group = { group: 0, joinFrom: true, joinTo: true };
+		const root = pin(1, 40, 100, 52, 100);
+		const result = routeWires({
+			bounds,
+			obstacles: corridors,
+			wires: [wire(root, pin(2, 360, 100, 348, 100), 1, group), wire(root, pin(5, 100, 40, 100, 52), 1, group), wire(pin(3, 200, 10), pin(4, 360, 40), 2)],
+			fixed: [],
+			attempts: 4
+		});
+		expect(result.failed).toBeUndefined();
+		const [branch, trunk] = result.wires;
+		const start = branch!.points[0]!;
+		const onTrunk = trunk!.points.slice(1).some((end, step) => {
+			const from = trunk!.points[step]!;
+			return Math.min(from.x, end.x) <= start.x && start.x <= Math.max(from.x, end.x) && Math.min(from.y, end.y) <= start.y && start.y <= Math.max(from.y, end.y);
+		});
+		expect(onTrunk).toBe(true);
+		expect(units(branch!.points).some(([, y]) => y === 200)).toBe(true);
+	});
+
 	test('negotiates two separate disputes, each with its own history', () => {
 		/* The same dispute twice, 400 units apart: each rerouted net's window
 		   holds only its own contested points. */
@@ -85,6 +109,27 @@ describe('negotiation', () => {
 		});
 		expect(result.failed).toBeUndefined();
 		expect(new Set(result.rippedUp.map((entry) => entry.wire))).toEqual(new Set([0, 1, 2, 3]));
+	});
+
+	test('a wire running through another net\'s pin is a contact to negotiate away', () => {
+		/* Found by search. The second wire's cheapest path runs straight through
+		   the first wire's pin at (128, 142): no overlap, only a T. */
+		const input: RouterInput = {
+			bounds: { width: 380 * U, height: 220 * U },
+			obstacles: [wall(900, 40, 20, 64, 104), wall(901, 100, 32, 148, 92), wall(902, 160, 80, 196, 104)],
+			wires: [wire(pin(89, 128, 142), pin(81, 224, 82), 0), wire(pin(19, 104, 166), pin(20, 128, 34), 1), wire(pin(66, 56, 118), pin(16, 116, 178), 2)],
+			fixed: [],
+			attempts: 6
+		};
+		const result = routeWires(input);
+		expect(result.failed).toBeUndefined();
+		expect(result.attempts).toBe(1);
+		const pinA = point(128, 142);
+		const through = result.wires[1]!.points.slice(1).some((end, step) => {
+			const from = result.wires[1]!.points[step]!;
+			return Math.min(from.x, end.x) <= pinA.x && pinA.x <= Math.max(from.x, end.x) && Math.min(from.y, end.y) <= pinA.y && pinA.y <= Math.max(from.y, end.y);
+		});
+		expect(through).toBe(false);
 	});
 
 	test('reports contention when both nets need the only track', () => {
@@ -201,31 +246,36 @@ describe('search', () => {
 	});
 
 	test('a tree never meets four ways at one point', () => {
-		/* Four pins around a plus: the natural tree is a cross at (200, 100). */
+		/* Found by search: the cheapest place for the last two branches is the
+		   same point on the first wire, which would make a cross. */
 		const group = { group: 0, joinFrom: true, joinTo: true };
-		const center = pin(1, 40, 100, 52, 100);
+		const root = pin(1, 196, 100, 184, 100);
 		const result = routeWires({
 			bounds,
 			obstacles: [],
 			wires: [
-				wire(center, pin(2, 360, 100, 348, 100), 1, group),
-				wire(center, pin(3, 200, 20, 200, 32), 1, group),
-				wire(center, pin(4, 200, 180, 200, 168), 1, group)
+				wire(root, pin(2, 208, 244, 208, 232), 1, group),
+				wire(root, pin(3, 160, 136, 160, 124), 1, group),
+				wire(root, pin(4, 100, 112, 100, 124), 1, group),
+				wire(root, pin(5, 160, 52, 160, 40), 1, group)
 			],
 			fixed: [],
 			attempts: 1
 		});
 		expect(result.failed).toBeUndefined();
-		const degree = new Map<string, number>();
-		for (const route of result.wires) {
-			for (let step = 1; step < route.points.length; step += 1) {
-				for (const end of [route.points[step - 1]!, route.points[step]!]) {
-					const key = `${end.x},${end.y}`;
-					degree.set(key, (degree.get(key) ?? 0) + 1);
+		/* Directions copper leaves each vertex in, counting wires passing through. */
+		const segments = result.wires.flatMap((route) => route.points.slice(1).map((end, step) => [route.points[step]!, end] as const));
+		for (const [vertex] of segments) {
+			const directions = new Set<string>();
+			for (const [a, b] of segments) {
+				for (const [from, to] of [[a, b], [b, a]] as const) {
+					const onLine = from.x === to.x ? vertex.x === from.x && Math.min(from.y, to.y) <= vertex.y && vertex.y <= Math.max(from.y, to.y) : vertex.y === from.y && Math.min(from.x, to.x) <= vertex.x && vertex.x <= Math.max(from.x, to.x);
+					if (!onLine || (vertex.x === to.x && vertex.y === to.y)) continue;
+					directions.add(`${Math.sign(to.x - vertex.x)},${Math.sign(to.y - vertex.y)}`);
 				}
 			}
+			expect(directions.size, `${vertex.x},${vertex.y}`).toBeLessThan(4);
 		}
-		expect(Math.max(...degree.values())).toBeLessThan(4);
 	});
 
 	test('a branch does not run into the vertical stub of a pin not yet joined', () => {

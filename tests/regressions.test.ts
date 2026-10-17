@@ -676,3 +676,19 @@ describe('a terminal cannot be wired to itself', () => {
 		});
 	});
 });
+
+describe('routing report', () => {
+	test('lists congestion cells column by column, then row by row', () => {
+		const source = `port:A "A" at (80,100) #blue
+port:B "B" at (520,300) #blue [orientation=left]
+port:C "C" at (80,300) #cyan
+port:D "D" at (520,100) #cyan [orientation=left]
+A.out -> B.in #blue [ortho]
+C.out -> D.in #cyan [ortho]`;
+		const { routing } = compileSchematic(source, { bounds: { width: 640, height: 400 }, title: 'congestion' });
+		expect(routing.congestion.length).toBeGreaterThan(4);
+		const sorted = [...routing.congestion].sort((left, right) => left.x - right.x || left.y - right.y);
+		expect(routing.congestion).toEqual(sorted);
+		expect(new Set(routing.congestion.map((cell) => cell.x)).size).toBeGreaterThan(1);
+	});
+});

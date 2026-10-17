@@ -7,477 +7,452 @@ import { spawnSync } from 'node:child_process';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mutants = [
 	{
-		name: 'shared terminals must unify inferred nets',
-		file: 'src/parser.ts',
-		from: 'if (owner === undefined) terminalOwner.set(key, index);\n\t\t\telse union(index, owner);',
-		to: 'if (owner === undefined) terminalOwner.set(key, index);\n\t\t\telse union(index, index);',
-		tests: ['tests/topology.test.ts']
-	},
-	{
-		name: 'equal explicit net names must unify disconnected terminals',
-		file: 'src/parser.ts',
-		from: 'if (owner === undefined) namedOwner.set(connection.net, index);\n\t\t\telse union(index, owner);',
-		to: 'if (owner === undefined) namedOwner.set(connection.net, index);\n\t\t\telse union(index, index);',
-		tests: ['tests/topology.test.ts']
-	},
-	{
-		name: 'connector labels remain routing obstacles',
-		file: 'src/layout.ts',
-		from: "return endpoint ? entry.kind === 'body' : entry.kind !== 'body';",
-		to: "return entry.kind === 'body';",
-		tests: ['tests/layout.test.ts']
-	},
-	{
-		name: 'a contact the validator rejects must cost the router infinity',
-		file: 'src/layout.ts',
-		from: '\t\t\t\tif (!contact.strict || contact.overlap || !previous.orthogonal) {\n\t\t\t\t\treturn Number.POSITIVE_INFINITY;\n\t\t\t\t}',
-		to: '\t\t\t\tif (false) {\n\t\t\t\t\treturn Number.POSITIVE_INFINITY;\n\t\t\t\t}',
-		tests: ['tests/layout.test.ts', 'tests/regressions.test.ts']
-	},
-	{
-		name: 'strict crossings stay cheaper than a blocked channel',
-		file: 'src/layout.ts',
-		from: 'cost += ROUTER_CROSSING_PENALTY;',
-		to: 'cost += ROUTER_CROSSING_PENALTY * 0;',
-		tests: ['tests/layout.test.ts', 'tests/topology.test.ts', 'tests/regressions.test.ts']
-	},
-	{
-		name: 'terminal approaches are reserved before any wire is placed',
-		file: 'src/layout.ts',
-		from: '\t\tif (connection.curve !== \'ortho\') continue;',
-		to: '\t\tif (connection.curve === \'ortho\') continue;',
-		tests: ['tests/regressions.test.ts']
-	},
-	{
-		name: 'a blocked channel offers a lane one pitch aside',
-		file: 'src/layout.ts',
-		from: 'const ROUTER_CHANNEL_PITCH = 12;',
-		to: 'const ROUTER_CHANNEL_PITCH = 0;',
-		tests: ['tests/layout.test.ts', 'tests/regressions.test.ts']
-	},
-	{
-		name: 'port aliases resolve to one canonical terminal',
-		file: 'src/layout.ts',
-		from: '\t\ttable.get(port) ?? table.get(terminalPointKey(resolvePortPoint(component, port))) ?? port',
-		to: '\t\ttable.get(port) ?? port',
-		tests: ['tests/regressions.test.ts']
-	},
-	{
-		name: 'a closed marker keeps its trace out of a compound path',
-		file: 'src/renderer.ts',
+		name: "a closed marker keeps its trace out of a compound path",
+		file: "src/renderer.ts",
 		from: "\t\tconst key = markerAttributes.includes('marker-')",
 		to: "\t\tconst key = markerAttributes.includes('marker-') && false",
-		tests: ['tests/renderer.test.ts', 'tests/regressions.test.ts']
+		tests: ["tests/renderer.test.ts", "tests/regressions.test.ts"]
 	},
 	{
-		name: 'vertically touching component bounds are not overlaps',
-		file: 'src/layout.ts',
-		from: 'left.maxY > right.minY',
-		to: 'left.maxY >= right.minY',
-		tests: ['tests/layout.test.ts']
+		name: "a caller-supplied budget is enforced, not merely accepted",
+		file: "src/limits.ts",
+		from: "\t\tresolved[name] = limit;",
+		to: "\t\tresolved[name] = resolved[name]!;",
+		tests: ["tests/regressions.test.ts"]
 	},
 	{
-		name: 'a caller-supplied budget is enforced, not merely accepted',
-		file: 'src/limits.ts',
-		from: '\t\tresolved[name] = limit;',
-		to: '\t\tresolved[name] = resolved[name]!;',
-		tests: ['tests/regressions.test.ts']
+		name: "a misspelled budget field fails instead of being ignored",
+		file: "src/limits.ts",
+		from: "\t\tif (!CONFIGURABLE_LIMITS.includes(name)) {",
+		to: "\t\tif (false && CONFIGURABLE_LIMITS.includes(name)) {",
+		tests: ["tests/regressions.test.ts"]
 	},
 	{
-		name: 'a misspelled budget field fails instead of being ignored',
-		file: 'src/limits.ts',
-		from: '\t\tif (!CONFIGURABLE_LIMITS.includes(name)) {',
-		to: '\t\tif (false && CONFIGURABLE_LIMITS.includes(name)) {',
-		tests: ['tests/regressions.test.ts']
+		name: "one budget governs the whole compilation",
+		file: "src/compiler.ts",
+		from: "\t\tlimits: resolveSchematicLimits(options.limits)",
+		to: "\t\tlimits: options.limits",
+		tests: ["tests/regressions.test.ts"]
 	},
 	{
-		name: 'one budget governs the whole compilation',
-		file: 'src/compiler.ts',
-		from: '\t\tlimits: resolveSchematicLimits(options.limits)',
-		to: '\t\tlimits: options.limits',
-		tests: ['tests/regressions.test.ts']
+		name: "open triangle interiors stay transparent",
+		file: "src/renderer.ts",
+		from: "d=\"M0 1 11 6 0 11Z\" fill=\"none\"",
+		to: "d=\"M0 1 11 6 0 11Z\" fill=\"context-stroke\"",
+		tests: ["tests/renderer.test.ts"]
 	},
 	{
-		name: 'open triangle interiors stay transparent',
-		file: 'src/renderer.ts',
-		from: 'd="M0 1 11 6 0 11Z" fill="none"',
-		to: 'd="M0 1 11 6 0 11Z" fill="context-stroke"',
-		tests: ['tests/renderer.test.ts']
+		name: "an unconstrained axis inherits the first reference",
+		file: "src/placement.ts",
+		from: "\t\tlet position: SchematicPoint = { x: seed.originX, y: seed.originY };",
+		to: "\t\tlet position: SchematicPoint = { x: 0, y: 0 };",
+		tests: ["tests/placement.test.ts"]
 	},
 	{
-		name: 'an unconstrained axis inherits the first reference',
-		file: 'src/placement.ts',
-		from: '\t\tlet position: SchematicPoint = { x: seed.originX, y: seed.originY };',
-		to: '\t\tlet position: SchematicPoint = { x: 0, y: 0 };',
-		tests: ['tests/placement.test.ts']
+		name: "a direction measures from the reference body, not its origin",
+		file: "src/placement.ts",
+		from: "\t\tconst rectangle = componentRectangle(component);\n\t\treturn { ...rectangle, originX: component.x, originY: component.y };",
+		to: "\t\treturn {\n\t\t\tminX: component.x,\n\t\t\tmaxX: component.x,\n\t\t\tminY: component.y,\n\t\t\tmaxY: component.y,\n\t\t\toriginX: component.x,\n\t\t\toriginY: component.y\n\t\t};",
+		tests: ["tests/placement.test.ts"]
 	},
 	{
-		name: 'a direction measures from the reference body, not its origin',
-		file: 'src/placement.ts',
-		from: '\t\tconst rectangle = componentRectangle(component);\n\t\treturn { ...rectangle, originX: component.x, originY: component.y };',
-		to: '\t\treturn {\n\t\t\tminX: component.x,\n\t\t\tmaxX: component.x,\n\t\t\tminY: component.y,\n\t\t\tmaxY: component.y,\n\t\t\toriginX: component.x,\n\t\t\toriginY: component.y\n\t\t};',
-		tests: ['tests/placement.test.ts']
+		name: "the two axis gap defaults stay distinct",
+		file: "src/placement.ts",
+		from: "\t\t\t: PLACEMENT_VERTICAL_GAP);",
+		to: "\t\t\t: PLACEMENT_HORIZONTAL_GAP);",
+		tests: ["tests/placement.test.ts"]
 	},
 	{
-		name: 'the two axis gap defaults stay distinct',
-		file: 'src/placement.ts',
-		from: '\t\t\t: PLACEMENT_VERTICAL_GAP);',
-		to: '\t\t\t: PLACEMENT_HORIZONTAL_GAP);',
-		tests: ['tests/placement.test.ts']
+		name: "the placement depth budget is enforced",
+		file: "src/placement.ts",
+		from: "\t\tif (chain > placementDepth) {",
+		to: "\t\tif (false && chain > placementDepth) {",
+		tests: ["tests/placement.test.ts"]
 	},
 	{
-		name: 'the placement depth budget is enforced',
-		file: 'src/placement.ts',
-		from: '\t\tif (chain > placementDepth) {',
-		to: '\t\tif (false && chain > placementDepth) {',
-		tests: ['tests/placement.test.ts']
+		name: "reported placements are ordered by source line",
+		file: "src/placement.ts",
+		from: "\treturn placements.sort((left, right) => left.line - right.line);",
+		to: "\treturn placements.sort((left, right) => right.line - left.line);",
+		tests: ["tests/placement.test.ts"]
 	},
 	{
-		name: 'reported placements are ordered by source line',
-		file: 'src/placement.ts',
-		from: '\treturn placements.sort((left, right) => left.line - right.line);',
-		to: '\treturn placements.sort((left, right) => right.line - left.line);',
-		tests: ['tests/placement.test.ts']
+		name: "a declaration waits for every reference it names",
+		file: "src/placement.ts",
+		from: "\t\t\tif (remaining === 0) ready.push(dependent);",
+		to: "\t\t\tready.push(dependent);",
+		tests: ["tests/placement.test.ts"]
 	},
 	{
-		name: 'a declaration waits for every reference it names',
-		file: 'src/placement.ts',
-		from: '\t\t\tif (remaining === 0) ready.push(dependent);',
-		to: '\t\t\tready.push(dependent);',
-		tests: ['tests/placement.test.ts']
+		name: "a digest states the precision the SVG writer uses",
+		file: "src/snapshot.ts",
+		from: "\treturn value.toFixed(3);",
+		to: "\treturn value.toFixed(2);",
+		tests: ["tests/snapshot.test.ts"]
 	},
 	{
-		name: 'the first routing pass is source order',
-		file: 'src/layout.ts',
-		from: '\t\tconst base = pass === 1 ? connections.map((_, index) => index) : criticality;',
-		to: '\t\tconst base = criticality;',
-		tests: ['tests/rip-up.test.ts', 'tests/regressions.test.ts']
-	},
-	{
-		name: 'a failed trace is promoted to the front of the next pass',
-		file: 'src/layout.ts',
-		from: '\t\tpromoted.unshift(failed);',
-		to: '\t\tpromoted.push(failed);',
-		tests: ['tests/rip-up.test.ts']
-	},
-	{
-		name: 'the routing attempt budget is enforced',
-		file: 'src/layout.ts',
-		from: '\t\tif (pass >= routingAttempts) {',
-		to: '\t\tif (pass >= routingAttempts + 1) {',
-		tests: ['tests/rip-up.test.ts']
-	},
-	{
-		name: 'a budget of one retry withholds the bundle path',
-		file: 'src/layout.ts',
-		from: '\t\t\t\troutingAttempts > 1 ? routeNudgedBundle(connections, components) : undefined;',
-		to: '\t\t\t\troutingAttempts > 0 ? routeNudgedBundle(connections, components) : undefined;',
-		tests: ['tests/rip-up.test.ts', 'tests/nudging.test.ts']
-	},
-	{
-		name: 'the bundle is ranked by the row each trace leaves from',
-		file: 'src/layout.ts',
-		from: '\t\t.sort((left, right) => escapes[left]!.start.y - escapes[right]!.start.y);',
-		to: '\t\t.sort((left, right) => left - right);',
-		tests: ['tests/nudging.test.ts']
-	},
-	{
-		name: 'each trace in a bundle turns on its own column',
-		file: 'src/layout.ts',
-		from: '\t\tconst inset = ROUTER_CHANNEL_PITCH * (rank + 1);',
-		to: '\t\tconst inset = ROUTER_CHANNEL_PITCH;',
-		tests: ['tests/nudging.test.ts']
-	},
-	{
-		name: 'each trace in a bundle crosses on its own row',
-		file: 'src/layout.ts',
-		from: '\t\t\tconst midRow = band + (rank - (count - 1) / 2) * ROUTER_CHANNEL_PITCH;',
-		to: '\t\t\tconst midRow = band;',
-		tests: ['tests/nudging.test.ts']
-	},
-	{
-		name: 'a bundle refuses a middle row outside the trace it belongs to',
-		file: 'src/layout.ts',
-		from: '\t\t\tif (midRow <= lowRow || midRow >= highRow) return undefined;',
-		to: '\t\t\tif (false) return undefined;',
-		tests: ['tests/nudging.test.ts']
-	},
-	/*
-	 * Deliberately absent: a mutant for the crossed-column early-out. Removing that
-	 * guard changes no observable behaviour on any document the suite can build —
-	 * a bundle narrow enough to cross its own columns is also congested enough that
-	 * the obstacle and occupancy checks below reject the folded route a moment
-	 * later. The guard earns its place by refusing an inside-out drawing directly
-	 * rather than by accident, but a mutant nothing can distinguish is noise in the
-	 * gate, which is the reason 0.6.0 removed one for the same reason.
-	 */
-	{
-		name: 'a bundle is verified against component obstacles',
-		file: 'src/layout.ts',
-		from: '\t\tif (routeIntersectsObstacles(points, index, from.component.id, to.component.id)) {',
-		to: '\t\tif (false) {',
-		tests: ['tests/nudging.test.ts']
-	},
-	{
-		name: 'a mixed-curve bundle is never nudged',
-		file: 'src/layout.ts',
-		from: "connections.some((connection) => connection.curve !== 'ortho' || connection.trunk !== undefined)",
-		to: "connections.some((connection) => connection.curve === 'never' || connection.trunk !== undefined)",
-		tests: ['tests/nudging.test.ts']
-	},
-	{
-		name: 'congestion cells are reported in a stable order',
-		file: 'src/layout.ts',
-		from: '\treturn cells.sort((left, right) => left.x - right.x || left.y - right.y);',
-		to: '\treturn cells;',
-		tests: ['tests/rip-up.test.ts']
-	},
-	{
-		name: 'a digest states the precision the SVG writer uses',
-		file: 'src/snapshot.ts',
-		from: '\treturn value.toFixed(3);',
-		to: '\treturn value.toFixed(2);',
-		tests: ['tests/snapshot.test.ts']
-	},
-	{
-		name: 'a digest reports the orientation a declaration stated',
-		file: 'src/snapshot.ts',
+		name: "a digest reports the orientation a declaration stated",
+		file: "src/snapshot.ts",
 		from: "\tif ('orientation' in component && component.orientation !== undefined) {",
 		to: "\tif ('orientation' in component && component.orientation === undefined) {",
-		tests: ['tests/snapshot.test.ts']
+		tests: ["tests/snapshot.test.ts"]
 	},
 	{
-		name: 'recovery reads a curve from the path that was drawn',
-		file: 'src/decompile.ts',
+		name: "recovery reads a curve from the path that was drawn",
+		file: "src/decompile.ts",
 		from: "\tif (/\\s[HV]\\s/.test(path)) return 'ortho';",
 		to: "\tif (false) return 'ortho';",
-		tests: ['tests/decompile.test.ts']
+		tests: ["tests/decompile.test.ts"]
 	},
 	{
-		name: 'recovery writes a CSS colour without the token sigil',
-		file: 'src/decompile.ts',
+		name: "recovery writes a CSS colour without the token sigil",
+		file: "src/decompile.ts",
 		from: "\tif (color.kind === 'css') return color.value;",
 		to: "\tif (color.kind === 'css') return `#${color.value}`;",
-		tests: ['tests/decompile.test.ts']
+		tests: ["tests/decompile.test.ts"]
 	},
 	{
-		name: 'recovery rejects a colour token the parser does not define',
-		file: 'src/decompile.ts',
-		from: '\treturn (SEMANTIC_COLORS as readonly string[]).includes(value);',
-		to: '\treturn true;',
-		tests: ['tests/decompile.test.ts']
+		name: "recovery rejects a colour token the parser does not define",
+		file: "src/decompile.ts",
+		from: "\treturn (SEMANTIC_COLORS as readonly string[]).includes(value);",
+		to: "\treturn true;",
+		tests: ["tests/decompile.test.ts"]
 	},
 	{
-		name: 'recovery skips a group missing what full mode always writes',
-		file: 'src/decompile.ts',
-		from: '\t\tif (id === undefined || kind === undefined || label === undefined || line === undefined) {',
-		to: '\t\tif (id === undefined || kind === undefined) {',
-		tests: ['tests/decompile.test.ts']
+		name: "recovery skips a group missing what full mode always writes",
+		file: "src/decompile.ts",
+		from: "\t\tif (id === undefined || kind === undefined || label === undefined || line === undefined) {",
+		to: "\t\tif (id === undefined || kind === undefined) {",
+		tests: ["tests/decompile.test.ts"]
 	},
 	{
-		/*
-		 * The defect this arena actually shipped with, before the corpus caught it.
-		 * `wireSegmentCost` prices a contact the geometry validator would reject at
-		 * infinity; treating an unvisited state as improvable rather than as
-		 * costing infinity admits that edge, and the router returns overlapping
-		 * copper. Only congested documents notice.
-		 */
-		name: 'an unvisited router state costs infinity, not "anything is better"',
-		file: 'src/layout.ts',
-		from: '\t\tconst known = this.#stamp[state] === this.#epoch ? this.#g[state]! : Number.POSITIVE_INFINITY;\n\t\treturn g < known;',
-		to: '\t\treturn this.#stamp[state] !== this.#epoch || g < this.#g[state]!;',
-		tests: ['tests/router-arena.test.ts', 'tests/rip-up.test.ts']
+		name: "the SVG writer refuses a chunk that overruns the budget",
+		file: "src/renderer.ts",
+		from: "\t\tif (read < chunk.length || written > remaining) throw this.#overBudget();",
+		to: "\t\tif (written > remaining) throw this.#overBudget();",
+		tests: ["tests/byte-writer.test.ts"]
 	},
 	{
-		name: 'the router heap breaks ties on g before state',
-		file: 'src/layout.ts',
-		from: '\t\treturn leftF !== rightF ? leftF < rightF : leftG !== rightG ? leftG < rightG : leftState < rightState;',
-		to: '\t\treturn leftF !== rightF ? leftF < rightF : leftState < rightState;',
-		tests: ['tests/router-arena.test.ts']
+		name: "a rejected SVG append commits nothing",
+		file: "src/renderer.ts",
+		from: "\t\tif (read < chunk.length || written > remaining) throw this.#overBudget();\n\t\tthis.#at += written;",
+		to: "\t\tthis.#at += written;\n\t\tif (read < chunk.length || written > remaining) throw this.#overBudget();",
+		tests: ["tests/byte-writer.test.ts"]
 	},
 	{
-		name: 'a new route must not inherit the previous route\'s scores',
-		file: 'src/layout.ts',
-		from: '\t\tthis.#epoch += 1;\n\t\tthis.#size = 0;',
-		to: '\t\tthis.#size = 0;',
-		tests: ['tests/router-arena.test.ts']
+		name: "the SVG writer reports the size it actually wrote",
+		file: "src/renderer.ts",
+		from: "\treturn this.#at;",
+		to: "\treturn this.#buffer.length;",
+		tests: ["tests/byte-writer.test.ts", "tests/compiler.test.ts"]
 	},
 	{
-		/*
-		 * Lazy deletion means the heap outgrows the state count. Sizing it once
-		 * from the grid and never growing silently drops queued states, which a
-		 * congested document turns into a route it should have found.
-		 */
-		name: 'the router heap grows past the state count',
-		file: 'src/layout.ts',
-		from: '\t\tthis.#reserveHeap(this.#size + 1);',
-		to: '',
-		tests: ['tests/router-arena.test.ts']
-	},
-	{
-		name: 'the SVG writer refuses a chunk that overruns the budget',
-		file: 'src/renderer.ts',
-		from: '\t\tif (read < chunk.length || written > remaining) throw this.#overBudget();',
-		to: '\t\tif (written > remaining) throw this.#overBudget();',
-		tests: ['tests/byte-writer.test.ts']
-	},
-	{
-		name: 'a rejected SVG append commits nothing',
-		file: 'src/renderer.ts',
-		from: '\t\tif (read < chunk.length || written > remaining) throw this.#overBudget();\n\t\tthis.#at += written;',
-		to: '\t\tthis.#at += written;\n\t\tif (read < chunk.length || written > remaining) throw this.#overBudget();',
-		tests: ['tests/byte-writer.test.ts']
-	},
-	{
-		name: 'the SVG writer reports the size it actually wrote',
-		file: 'src/renderer.ts',
-		from: '\treturn this.#at;',
-		to: '\treturn this.#buffer.length;',
-		tests: ['tests/byte-writer.test.ts', 'tests/compiler.test.ts']
-	},
-	/*
-	 * The family predicates answer by hash rather than by linear scan. What makes
-	 * that safe is that each set is *derived* from the registry it mirrors, so it
-	 * cannot fall out of step with the keywords the parser accepts. Emptying one
-	 * is the drift a hand-written literal would have risked, and it must be loud.
-	 */
-	/*
-	 * The sparse search caches each edge's price for one route. Three ways the
-	 * cache could go wrong while every route still "works": a price leaking into
-	 * the next route, the two axes of a cell sharing one slot, and an edge priced
-	 * from whichever end reached it first instead of one canonical end.
-	 */
-	{
-		name: 'an edge price does not survive into the next route',
-		file: 'src/layout.ts',
-		from: 'return this.#edgeStamp[slot] === this.#epoch ? this.#edgeCost[slot]! : UNPRICED_EDGE;',
-		to: 'return this.#edgeStamp[slot] !== 0 ? this.#edgeCost[slot]! : UNPRICED_EDGE;',
-		tests: ['tests/router-arena.test.ts']
-	},
-	{
-		name: 'an edge is keyed by its axis as well as its cell',
-		file: 'src/layout.ts',
-		from: 'const slot = (forward ? currentCell : nextY * width + nextX) * 2 + (direction - 1);',
-		to: 'const slot = (forward ? currentCell : nextY * width + nextX) * 2;',
-		tests: ['tests/router-arena.test.ts']
-	},
-	{
-		name: 'an edge is keyed by its west or north cell, not by who reached it',
-		file: 'src/layout.ts',
-		from: 'const slot = (forward ? currentCell : nextY * width + nextX) * 2 + (direction - 1);',
-		to: 'const slot = currentCell * 2 + (direction - 1);',
-		tests: ['tests/router-arena.test.ts']
-	},
-	/*
-	 * Trunk branches. Each of these leaves a drawing that still compiles — which
-	 * is exactly why each needs a mutant: a branch tapping another net, a dot
-	 * beside a terminal dot, a junction drawn where the branch does not leave,
-	 * or a midpoint kink all look like plausible output to a test that only
-	 * checks for an SVG.
-	 */
-	{
-		name: 'a trunk branch taps only its own net',
-		file: 'src/layout.ts',
-		from: '\t\t\t!connectionsShareNet(connection, connections[other]!)\n',
-		to: '\t\t\tfalse\n',
-		tests: ['tests/trunk.test.ts']
-	},
-	{
-		name: 'a junction is held off the terminals of the wire it taps',
-		file: 'src/layout.ts',
-		from: 'const TRUNK_STANDOFF = ROUTER_CHANNEL_PITCH * 2;',
-		to: 'const TRUNK_STANDOFF = 0;',
-		tests: ['tests/trunk.test.ts']
-	},
-	{
-		name: 'a junction slides to where the branch leaves the net',
-		file: 'src/layout.ts',
-		from: 'while (points.length > 2 && alongCopper(points)) points.shift();',
-		to: 'while (false) points.shift();',
-		tests: ['tests/trunk.test.ts']
-	},
-	{
-		name: 'a branch tries a clean L off the trunk before the general search',
-		file: 'src/layout.ts',
-		from: '\t\t\t\tmiddle = shape;\n\t\t\t\tbreak;',
-		to: '\t\t\t\tbreak;',
-		tests: ['tests/trunk.test.ts']
-	},
-	{
-		name: 'an L that sets off along copper is passed over',
-		file: 'src/layout.ts',
-		from: '\t\t\t\t!alongCopper(shape) &&\n',
-		to: '',
-		tests: ['tests/trunk.test.ts']
-	},
-	{
-		name: 'a document with a trunk branch is never laid out as a bundle',
-		file: 'src/layout.ts',
-		from: "connections.some((connection) => connection.curve !== 'ortho' || connection.trunk !== undefined)",
-		to: "connections.some((connection) => connection.curve !== 'ortho')",
-		tests: ['tests/trunk.test.ts']
-	},
-	{
-		name: 'a branch joins the net at the end wired above it',
-		file: 'src/parser.ts',
+		name: "a branch joins the net at the end wired above it",
+		file: "src/parser.ts",
 		from: "connection.trunk = fromWired ? 'from' : 'to';",
 		to: "connection.trunk = 'from';",
-		tests: ['tests/trunk.test.ts']
-	},
-	/*
-	 * Sub-circuit expansion. Every one of these still produces a document — parts
-	 * stacked at the definition's origin, a default that silently wins, a
-	 * terminal resolved one level short — so each is pinned against the
-	 * hand-flattened declarations it should equal, or against its diagnostic.
-	 */
-	{
-		name: 'copied coordinates are offset by the instance position',
-		file: 'src/parser.ts',
-		from: 'const x = Math.round((Number(component[4]) + dx) * 1000) / 1000;',
-		to: 'const x = Math.round(Number(component[4]) * 1000) / 1000;',
-		tests: ['tests/subcircuit.test.ts']
+		tests: ["tests/trunk.test.ts"]
 	},
 	{
-		name: 'nested instance offsets compose',
-		file: 'src/parser.ts',
-		from: 'dx + Number(instance[3]), dy + Number(instance[4]), bound',
-		to: 'Number(instance[3]), Number(instance[4]), bound',
-		tests: ['tests/subcircuit.test.ts']
+		name: "an instance parameter overrides the default",
+		file: "src/parser.ts",
+		from: "const value = supplied.get(parameter) ?? fallback;",
+		to: "const value = fallback ?? supplied.get(parameter);",
+		tests: ["tests/subcircuit.test.ts"]
 	},
 	{
-		name: 'an instance parameter overrides the default',
-		file: 'src/parser.ts',
-		from: 'const value = supplied.get(parameter) ?? fallback;',
-		to: 'const value = fallback ?? supplied.get(parameter);',
-		tests: ['tests/subcircuit.test.ts']
+		name: "a subcircuit cannot contain itself",
+		file: "src/parser.ts",
+		from: "if (stack.includes(kind!)) {",
+		to: "if (false) {",
+		tests: ["tests/subcircuit.test.ts"]
 	},
 	{
-		name: 'a subcircuit cannot contain itself',
-		file: 'src/parser.ts',
-		from: 'if (stack.includes(kind!)) {',
-		to: 'if (false) {',
-		tests: ['tests/subcircuit.test.ts']
+		name: "an exposed terminal resolves through every level of nesting",
+		file: "src/parser.ts",
+		from: "while (instances.has(id)) {",
+		to: "if (instances.has(id)) {",
+		tests: ["tests/subcircuit.test.ts"]
 	},
 	{
-		name: 'expansion is held to the source character budget',
-		file: 'src/parser.ts',
-		from: 'if (characters > characterLimit) {',
-		to: 'if (false) {',
-		tests: ['tests/subcircuit.test.ts']
+		name: "shared terminals must unify inferred nets",
+		file: "src/parser.ts",
+		from: "if (owner === undefined) terminals.set(key, index);\n\t\t\telse union(index, owner);",
+		to: "if (owner === undefined) terminals.set(key, index);\n\t\t\telse union(index, index);",
+		tests: ["tests/topology.test.ts"]
 	},
 	{
-		name: 'an exposed terminal resolves through every level of nesting',
-		file: 'src/parser.ts',
-		from: 'while (instances.has(id)) {',
-		to: 'if (instances.has(id)) {',
-		tests: ['tests/subcircuit.test.ts']
+		name: "equal explicit net names must unify disconnected terminals",
+		file: "src/parser.ts",
+		from: "if (owner === undefined) names.set(connection.net, index);\n\t\t\telse union(index, owner);",
+		to: "if (owner === undefined) names.set(connection.net, index);\n\t\t\telse union(index, index);",
+		tests: ["tests/topology.test.ts"]
 	},
 	{
-		name: 'a family set is derived from the registry it classifies',
-		file: 'src/layout.ts',
-		from: 'const UML_COMPONENT_KIND_SET: ReadonlySet<string> = new Set(UML_COMPONENT_KINDS);',
-		to: 'const UML_COMPONENT_KIND_SET: ReadonlySet<string> = new Set();',
-		tests: ['tests/uml.test.ts', 'tests/layout.test.ts']
+		name: "connector labels remain routing obstacles",
+		file: "src/layout.ts",
+		from: "label: connection.label === undefined ? undefined : (route) => labelRectAt(connection, midpoint(route))",
+		to: "label: undefined",
+		tests: ["tests/layout.test.ts"]
+	},
+	{
+		name: "port aliases resolve to one canonical terminal",
+		file: "src/parser.ts",
+		from: "connection.from.port = canonicalName(byId.get(connection.from.componentId)!, connection.from.port)!;",
+		to: "",
+		tests: ["tests/regressions.test.ts"]
+	},
+	{
+		name: "vertically touching component bounds are not overlaps",
+		file: "src/geom.ts",
+		from: "left.maxY > right.minY",
+		to: "left.maxY >= right.minY",
+		tests: ["tests/geom.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "a family set is derived from the registry it classifies",
+		file: "src/layout.ts",
+		from: "const UML = new Set<string>(UML_COMPONENT_KINDS);",
+		to: "const UML = new Set<string>();",
+		tests: ["tests/uml.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "a bridge never bulges into a neighbouring wire",
+		file: "src/layout.ts",
+		from: "limit = Math.min(limit, Math.floor((x - run.x) / 2));",
+		to: "limit = Math.min(limit, radius);",
+		tests: ["tests/layout.test.ts"]
+	},
+	{
+		name: "pin stubs of separate nets that touch are named, not routed",
+		file: "src/layout.ts",
+		from: "if (segmentContact(stub.a, stub.b, other.a, other.b) !== undefined) {",
+		to: "if (false) {",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts"]
+	},
+	{
+		name: "a drawn wire may not pass through a foreign terminal",
+		file: "src/layout.ts",
+		from: "if (segmentContact(chords[step - 1]!, chords[step]!, at, at) === undefined) continue;",
+		to: "continue;",
+		tests: ["tests/layout.test.ts"]
+	},
+	{
+		name: "a pin exit through its own text turns only beyond it",
+		file: "src/layout.ts",
+		from: "if (placed.normal.y < 0 && rect.minY < escape.y && rect.maxY > escape.y - clearance) escape = { x: escape.x, y: rect.minY };",
+		to: "",
+		tests: ["tests/regressions.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "congestion cells are reported in a stable order",
+		file: "src/layout.ts",
+		from: "congestion: [...cells.values()].sort((left, right) => left.x - right.x || left.y - right.y)",
+		to: "congestion: [...cells.values()].reverse()",
+		tests: ["tests/regressions.test.ts"]
+	},
+	{
+		name: "a contested location costs every net, touching or not",
+		file: "src/route.ts",
+		from: "let cost = g + length + s.history[next]!;",
+		to: "let cost = g + length;",
+		tests: ["tests/route.test.ts"]
+	},
+	{
+		name: "no shortcut retakes a priced track",
+		file: "src/route.ts",
+		from: "if (this.history.size > 0) return undefined;",
+		to: "",
+		tests: ["tests/route.test.ts"]
+	},
+	{
+		name: "a priced path is compared with the whole canvas",
+		file: "src/route.ts",
+		from: "if (wide.cost < found.cost) found = wide;",
+		to: "if (false) found = wide;",
+		tests: ["tests/route.test.ts"]
+	},
+	{
+		name: "routing order is geometric, not declaration order",
+		file: "src/route.ts",
+		from: "\t\t\t\tleft.key[0] - right.key[0] ||\n\t\t\t\tleft.key[1] - right.key[1] ||\n\t\t\t\tleft.key[2] - right.key[2] ||\n\t\t\t\tleft.key[3] - right.key[3] ||\n",
+		to: "",
+		tests: ["tests/route.test.ts"]
+	},
+	{
+		name: "a short detour beats an avoidable bridge",
+		file: "src/route.ts",
+		from: "if (better !== undefined && better.crossings < found.crossings) return better.path;",
+		to: "if (false) return better.path;",
+		tests: ["tests/route.test.ts"]
+	},
+	{
+		name: "a tree never meets four ways",
+		file: "src/route.ts",
+		from: "if (degree < 3 && !crowded) startCells.push(cell);",
+		to: "if (!crowded) startCells.push(cell);",
+		tests: ["tests/route.test.ts"]
+	},
+	{
+		name: "a junction is held two pitches off the pins",
+		file: "src/route.ts",
+		from: "Math.abs(pin.x - x) + Math.abs(pin.y - y) < 2 * PITCH",
+		to: "Math.abs(pin.x - x) + Math.abs(pin.y - y) < 0",
+		tests: ["tests/trunk.test.ts"]
+	},
+	{
+		name: "a stub through a third body is reported",
+		file: "src/route.ts",
+		from: "if (blocked >= 0) return fail(blocked, 'unroutable', 0);",
+		to: "",
+		tests: ["tests/route.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "text holding an escape point cannot wall it in",
+		file: "src/route.ts",
+		from: "\t\t\t\tif (!holdsEscape(obstacle.rect)) block(obstacle.rect);",
+		to: "\t\t\t\tblock(obstacle.rect);",
+		tests: ["tests/regressions.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "torn-up copper no longer occupies the canvas",
+		file: "src/route.ts",
+		from: "return this.copper.query(rect).filter((piece) => piece.dead !== true);",
+		to: "return this.copper.query(rect);",
+		tests: ["tests/route.test.ts"]
+	},
+	{
+		name: "a wire ending on another net is a contact",
+		file: "src/route.ts",
+		from: "if (along >= low && along <= high) flag(piece, other, end);",
+		to: "",
+		tests: ["tests/route.test.ts"]
+	},
+	{
+		name: "the router heap prefers the deeper of two equal estimates",
+		file: "src/route.ts",
+		from: "return f1 !== f2 ? f1 < f2 : g1 !== g2 ? g1 > g2 : s1 < s2;",
+		to: "return f1 !== f2 ? f1 < f2 : s1 < s2;",
+		tests: ["tests/route.test.ts", "tests/regressions.test.ts", "tests/trunk.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "rounding is symmetric about zero",
+		file: "src/geom.ts",
+		from: "const rounded = Math.floor(quotient + 0.5);\n\treturn numerator < 0 ? -rounded : rounded;",
+		to: "return Math.round(numerator / denominator);",
+		tests: ["tests/geom.test.ts"]
+	},
+	{
+		name: "orientation falls back to exact BigInt products",
+		file: "src/geom.ts",
+		from: "const limit = 67_108_864;",
+		to: "const limit = Number.POSITIVE_INFINITY;",
+		tests: ["tests/geom.test.ts"]
+	},
+	{
+		name: "formatted decimals carry no trailing zeros",
+		file: "src/geom.ts",
+		from: "while (digits.endsWith('0')) digits = digits.slice(0, -1);",
+		to: "",
+		tests: ["tests/geom.test.ts"]
+	},
+	{
+		name: "a fourth decimal rounds the milli-unit",
+		file: "src/geom.ts",
+		from: "if (fraction.length > 3 && fraction.charCodeAt(3) >= 53) value += 1;",
+		to: "",
+		tests: ["tests/geom.test.ts"]
+	},
+	{
+		name: "a tail holding a line separator is unrecognized, as in 0.x",
+		file: "src/syntax.ts",
+		from: "return text.indexOf('\\u2028', index) >= 0 || text.indexOf('\\u2029', index) >= 0;",
+		to: "return false;",
+		tests: ["tests/syntax.test.ts"]
+	},
+	{
+		name: "a port gives its final hyphen back to the arrow",
+		file: "src/syntax.ts",
+		from: "fromPortEnd -= 1;",
+		to: "",
+		tests: ["tests/syntax.test.ts"]
+	},
+	{
+		name: "an incomplete by-gap is abandoned, as the optional group was",
+		file: "src/syntax.ts",
+		from: "if (numberEnd > 0 && separator(text, numberEnd) >= 0) {",
+		to: "if (numberEnd > 0) {",
+		tests: ["tests/syntax.test.ts"]
+	},
+	{
+		name: "an unknown endpoint is reported at its token",
+		file: "src/parser.ts",
+		from: "checkEndpoint(connection.from, byId, connection.line, fromId, fromPort);",
+		to: "checkEndpoint(connection.from, byId, connection.line, undefined, undefined);",
+		tests: ["tests/diagnose.test.ts"]
+	},
+	{
+		name: "a failed component is not blamed again by its wires",
+		file: "src/parser.ts",
+		from: "if (poisoned.has(connection.from.componentId) || poisoned.has(connection.to.componentId)) continue;",
+		to: "",
+		tests: ["tests/diagnose.test.ts"]
+	},
+	{
+		name: "diagnostics are listed in source order",
+		file: "src/parser.ts",
+		from: "return reporter.diagnostics.sort((left, right) => left.line! - right.line!);",
+		to: "return reporter.diagnostics;",
+		tests: ["tests/diagnose.test.ts"]
+	},
+	{
+		name: "a substituted line carries no column",
+		file: "src/parser.ts",
+		from: "if (source.shifted === true) return undefined;",
+		to: "",
+		tests: ["tests/diagnose.test.ts"]
+	},
+	{
+		name: "copied coordinates are offset by the instance position",
+		file: "src/parser.ts",
+		from: "x: fromMilli(parseMilli(syntax.x.text) + dx)",
+		to: "x: fromMilli(parseMilli(syntax.x.text))",
+		tests: ["tests/subcircuit.test.ts"]
+	},
+	{
+		name: "nested instance offsets compose",
+		file: "src/parser.ts",
+		from: "dx + parseMilli(instance[3]!), dy + parseMilli(instance[4]!)",
+		to: "parseMilli(instance[3]!), parseMilli(instance[4]!)",
+		tests: ["tests/subcircuit.test.ts"]
+	},
+	{
+		name: "expansion is held to the source character budget",
+		file: "src/parser.ts",
+		from: "if (characters > budget) {",
+		to: "if (false) {",
+		tests: ["tests/subcircuit.test.ts"]
+	},
+	{
+		name: "an alias names the terminal drawn at its point",
+		file: "src/symbols/index.ts",
+		from: "return ports.find((entry) => entry.x === local.x && entry.y === local.y)?.id ?? local.id;",
+		to: "return local.id;",
+		tests: ["tests/ports.test.ts"]
+	},
+	{
+		name: "reset accepts the numbered spellings of its one track",
+		file: "src/symbols/quantum.ts",
+		from: "if (component.kind === 'reset' && /^(in|out)1$/.test(name)) name = name.slice(0, -1);",
+		to: "",
+		tests: ["tests/ports.test.ts"]
+	},
+	{
+		name: "orientation turns clockwise",
+		file: "src/symbols/index.ts",
+		from: "{ right: 0, down: 1, left: 2, up: 3 }",
+		to: "{ right: 0, down: 3, left: 2, up: 1 }",
+		tests: ["tests/ports.test.ts", "tests/primitives.test.ts"]
 	}
 ];
 
