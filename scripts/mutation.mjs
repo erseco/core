@@ -698,6 +698,13 @@ const mutants = [
 		from: "\treturn rectUnits(componentExtent(component, true));",
 		to: "\treturn rectUnits(componentExtent(component, false));",
 		tests: ["tests/regressions.test.ts", "tests/placement.test.ts"]
+	},
+	{
+		name: "a reference to a declaration that already failed is not reported as undeclared",
+		file: "src/placement.ts",
+		from: "\t\t\tif (reference === undefined && failedDeclarations?.has(relation.ref) === true) {",
+		to: "\t\t\tif (false) {",
+		tests: ["tests/diagnose.test.ts"]
 	}
 ];
 

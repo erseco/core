@@ -177,6 +177,25 @@ describe('placement', () => {
 		expect(diagnostics.every((diagnostic) => diagnostic.code === 'placement')).toBe(true);
 	});
 
+	test('a part placed against a declaration that failed is not told it was never declared', () => {
+		/* R1 is declared; its own option failed. D1 is placed right-of R1 and used
+		   to be blamed for referencing a part "the document never declares". */
+		const diagnostics = diagnoseSchematic(
+			doc(
+				'source:VIN "v" at (90, 160) #blue [type=voltage-dc]',
+				'resistor:R1 "r" right-of VIN by 140 #amber [tolerance=1%]',
+				'capacitor:C1 "c" below R2 by 80 #cyan [orientation=down]',
+				'diode:D1 "d" right-of R1 by 140 #rose [type=led]'
+			),
+			fence
+		);
+		expect(diagnostics.map(({ line, code }) => [line, code])).toEqual([
+			[2, 'option'],
+			[3, 'placement']
+		]);
+		expect(diagnostics[1]!.message).toContain('relative to R2, which the document never declares');
+	});
+
 	test('a declaration stuck behind a cycle reports the cycle once, for every member', () => {
 		const diagnostics = diagnoseSchematic(doc('port:G "g" right-of H #blue', 'port:H "h" right-of I #blue', 'port:I "i" right-of H #blue'), fence);
 		expect(diagnostics.map(({ line, message }) => [line, message.split('.')[0]])).toEqual([[1, 'Placement cycle: H -> I -> H']]);

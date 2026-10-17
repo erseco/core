@@ -2,6 +2,12 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
+## [1.0.1] - 2026-10-17
+
+### Fixed
+
+- **A part placed against a declaration that failed is no longer told that declaration does not exist.** When a declaration's own line failed — an unknown option, say — anything placed relative to it was reported as referencing a part "the document never declares", which sent the author to a line that was fine. It is now left unplaced without a second diagnostic, as 1.0 already did for everything that depends on a failed placement. `resolvePlacements` takes the ids that already failed as an optional fifth argument. Found while writing the 1.0 documentation's diagnostics page.
+
 ## [1.0.0] - 2026-10-17
 
 1.0 is a rebuild of the compiler's core behind the same language and the same API. The language is read exactly as before — the 0.8 declaration patterns are the front end — and of the corpus's 54 rejections under 0.8, 52 are byte-identical in 1.0. Drawings change, because the router is new, and three corpus documents change outcome; each is listed under *Changed*.

@@ -8,9 +8,9 @@
 
 **The [documentation site](https://schemd.johnowolabiidogun.dev/docs/1.0/overview) is the reference.** Every page there is versioned per release line and every example is compiled by the real engine. This file is the short tour.
 
-Version 1.0.0 needs Node.js 24 or newer.
+Version 1.0.1 needs Node.js 24 or newer.
 
-[Docs](https://schemd.johnowolabiidogun.dev/docs/1.0/overview) · [Playground](https://schemd.johnowolabiidogun.dev/playground) · [Inspector](https://schemd.johnowolabiidogun.dev/inspector/1.0.0) · [Changelog](./CHANGELOG.md) · [Roadmap](./ROADMAP.md)
+[Docs](https://schemd.johnowolabiidogun.dev/docs/1.0/overview) · [Playground](https://schemd.johnowolabiidogun.dev/playground) · [Inspector](https://schemd.johnowolabiidogun.dev/inspector/1.0.1) · [Changelog](./CHANGELOG.md) · [Roadmap](./ROADMAP.md)
 
 ## Install
 

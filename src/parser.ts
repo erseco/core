@@ -623,7 +623,7 @@ function analyze(source: string, fence: SchematicFence, reporter: Reporter): Sch
 
 	let placements: ReturnType<typeof resolvePlacements> = [];
 	if (pending.length > 0) {
-		placements = resolvePlacements(components, pending, limits.placementDepth, (error) => reporter.report(error));
+		placements = resolvePlacements(components, pending, limits.placementDepth, (error) => reporter.report(error), poisoned);
 		if (reporter.failed) return undefined;
 		for (const entry of pending) {
 			const offences = boundsOffences(entry.component, normalized);
