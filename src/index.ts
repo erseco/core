@@ -5,7 +5,7 @@
  *
  * @packageDocumentation
  */
-export { parseSchematic, parseSchematicColor, parseSchematicFence } from './parser.js';
+export { diagnoseSchematic, parseSchematic, parseSchematicColor, parseSchematicFence } from './parser.js';
 export { renderSchematic } from './renderer.js';
 export {
 	compileSchematic,
@@ -132,6 +132,7 @@ export {
 	QUANTUM_GATE_KINDS,
 	QUANTUM_SPECIAL_KINDS,
 	RESONATOR_TYPES,
+	SCHEMATIC_DIAGNOSTIC_CODES,
 	SCHEMATIC_ORIENTATIONS,
 	SCHEMATIC_PLACEMENT_KINDS,
 	SCHEMATIC_SIGNAL_KINDS,
@@ -183,6 +184,8 @@ export {
 	type SchematicComponent,
 	type SchematicConnection,
 	type SchematicColor,
+	type SchematicDiagnosticCode,
+	type SchematicSourceDiagnostic,
 	type SchematicDocument,
 	type SchematicEndpoint,
 	type SchematicFence,

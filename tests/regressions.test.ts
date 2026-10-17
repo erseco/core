@@ -18,6 +18,7 @@ import {
 	inspectSchematic,
 	parseSchematic,
 	renderSchematic,
+	resolvePortPoint,
 	routeConnections,
 	SCHEMATIC_LIMITS,
 	SCHEMD_OUTPUT_MODES,
@@ -241,10 +242,15 @@ N4.out -> N5.out #blue [ortho]`;
 		expect(
 			[...svg.matchAll(/schematic-trace[^"]*" d="([^"]*)"/g)].map((match) => match[1])
 		).toEqual([
-			'M 122 480 H 207 V 426 H 280 V 438',
-			'M 480 422 V 434 H 380 V 426 H 280 V 438',
-			'M 538 780 H 526 V 226 H 280 V 238'
+			'M 122 480 H 134 V 412 H 280 V 438',
+			'M 480 422 V 552 H 250 V 412',
+			'M 538 780 H 510 V 212 H 280 V 238'
 		]);
+		/* The two wires into N2.in are one net: the second joins the first at a
+		   dot, clear of the pin and its lead, instead of running its own lead into
+		   it. Every wire leaves its pin straight through the pin's own text and
+		   turns only beyond it. */
+		expect(svg).toMatch(/schematic-node-fill" fill="currentColor" cx="250" cy="412" r="3"/);
 	});
 
 	test('routes identically on every compile of one source', () => {
@@ -264,7 +270,7 @@ port:Y "Y" at (600,480) #blue
 A.out -> Y.in #blue [ortho]
 B.in -> X.in #blue [ortho]`;
 		expect(() => compileSchematic(source, { ...fence })).toThrow(
-			/No orthogonal route from .+ to .+ clears every component and earlier trace/
+			'Line 6: A.out and B.in sit too close to route apart as separate nets: the wires leaving them would touch. Move one of them away, or join them with a shared net.'
 		);
 	});
 });
@@ -669,5 +675,203 @@ describe('a terminal cannot be wired to itself', () => {
 			from: { componentId: 'R1', port: 'in' },
 			to: { componentId: 'R1', port: 'out' }
 		});
+	});
+});
+
+describe('routing report', () => {
+	test('lists congestion cells column by column, then row by row', () => {
+		const source = `port:A "A" at (80,100) #blue
+port:B "B" at (520,300) #blue [orientation=left]
+port:C "C" at (80,300) #cyan
+port:D "D" at (520,100) #cyan [orientation=left]
+A.out -> B.in #blue [ortho]
+C.out -> D.in #cyan [ortho]`;
+		const { routing } = compileSchematic(source, { bounds: { width: 640, height: 400 }, title: 'congestion' });
+		expect(routing.congestion.length).toBeGreaterThan(4);
+		const sorted = [...routing.congestion].sort((left, right) => left.x - right.x || left.y - right.y);
+		expect(routing.congestion).toEqual(sorted);
+		expect(new Set(routing.congestion.map((cell) => cell.x)).size).toBeGreaterThan(1);
+	});
+});
+
+describe('free pins', () => {
+	test('no routed wire passes through a pin nothing is wired to', () => {
+		/* C's top pin is free. Running along C's body edge is legal, but that edge
+		   holds the pin, and a wire over it would read as joined to it. */
+		const source = `port:A "A" at (70,100) #blue
+junction:J "junction" at (260,100) #cyan
+port:B "B" at (450,100) #blue [orientation=left]
+port:C "C" at (260,210) #cyan [orientation=up]
+A.out -> J.node #blue [ortho]
+J.node -> B.in #blue [ortho]
+J.node -> C.in #cyan [ortho]`;
+		const document = parseSchematic(source, { bounds: { width: 900, height: 540 }, title: 'free pins' });
+		const free = resolvePortPoint(document.components.find((component) => component.id === 'C')!, 'out');
+		const routes = routeConnections(document.connections, new Map(document.components.map((component) => [component.id, component])), { width: 900, height: 540 });
+		for (const route of routes) {
+			for (let step = 1; step < route.points.length; step += 1) {
+				const [a, b] = [route.points[step - 1]!, route.points[step]!];
+				const through = Math.min(a.x, b.x) <= free.x && free.x <= Math.max(a.x, b.x) && Math.min(a.y, b.y) <= free.y && free.y <= Math.max(a.y, b.y);
+				expect(through, `${route.d}`).toBe(false);
+			}
+		}
+	});
+});
+
+describe('found by the layout property search', () => {
+	const traces = (svg: string) => [...svg.matchAll(/schematic-trace[^"]*" d="([^"]*)"/g)].map((match) => match[1]!);
+
+	test('a connection written twice is crossed once, not twice at one point', () => {
+		/* The repeat is drawn along the first; counting its copper as a second
+		   crossing put two bridge arcs at one point and failed the document. */
+		const result = compileSchematic(
+			`switch:C0 "V_{out}" at (160, 460) #amber [type=spdt orientation=left]
+mux:C1 "Q" at (580, 220) #blue [inputs=4 orientation=up]
+cnot:C2 "Load" at (600, 720) #amber
+port:C3 "1 k\\Omega" at (280, 540) #amber [orientation=right]
+amplifier:C4 "1 k\\Omega" at (660, 640) #cyan [type=opamp orientation=down]
+ground:C5 "R" at (520, 420) #cyan
+testpoint:C6 "V_{out}" at (500, 600) #amber
+C1.enable -> C3.in #blue [ortho]
+C0.common -> C1.in1 #blue [ortho]
+C3.out -> C1.in4 #blue [bezier]
+C4.v+ -> C6.node #blue [ortho net=N1]
+C4.v+ -> C6.node #blue [ortho]`,
+			{ bounds: { width: 800, height: 850 }, title: 'repeat', mode: 'full' }
+		);
+		const [, , , repeatedA, repeatedB] = traces(result.svg);
+		expect(repeatedA).toBe(repeatedB);
+	});
+
+	test('two connectors between the same sides are drawn apart, whichever is written first', () => {
+		const lines = ['testpoint:C0 "Q" at (440, 140) #amber', 'class:C1 "1 k\\Omega" at (500, 280) #cyan', 'class:C2 "1 k\\Omega" at (360, 200) #slate'];
+		const forward = 'C2.left -> C1.right #blue [ortho association]';
+		const backward = 'C1.right -> C2.left #blue [ortho association]';
+		const fence = { bounds: { width: 600, height: 400 }, title: 'pair', mode: 'full' } as const;
+		const one = compileSchematic([...lines, forward, backward].join('\n'), fence);
+		const other = compileSchematic([...lines, backward, forward].join('\n'), fence);
+		const [a, b] = traces(one.svg);
+		expect(a).not.toBe(b);
+		expect(traces(other.svg).sort()).toEqual([a, b].sort());
+	});
+
+	test('the same connector written twice is drawn twice, apart', () => {
+		const result = compileSchematic(
+			'class:C1 "A" at (500, 280) #cyan\nclass:C2 "B" at (200, 200) #slate\nC2.right -> C1.left #blue [ortho association]\nC2.right -> C1.left #blue [ortho association]',
+			{ bounds: { width: 700, height: 400 }, title: 'twice', mode: 'full' }
+		);
+		const [a, b] = traces(result.svg);
+		expect(a).not.toBe(b);
+	});
+
+	test('a bridge stops short of a junction on its own run', () => {
+		const result = compileSchematic(
+			`flipflop:C0 "Microcontroller" at (420, 280) #amber [type=d orientation=down]
+transistor:C1 "x" at (560, 280) #cyan [type=npn]
+action:C2 "Q" at (660, 120) #cyan
+amplifier:C3 "x" at (960, 320) #amber [type=opamp orientation=left]
+port:C4 "Q" at (1020, 480) #cyan
+resistor:C5 "1 k\\Omega" at (600, 440) #cyan [orientation=down]
+mux:C6 "Q" at (100, 560) #blue [inputs=4]
+C1.base -> C5.in #blue [ortho]
+C3.v+ -> C4.in #blue [ortho net=N0]
+C1.emitter -> C4.in #blue [ortho]
+C1.base -> C6.select #blue [ortho]
+C3.positive -> C6.in1 #blue [ortho]
+C0.d -> C4.in #blue [ortho label="bus"]
+C5.in -> C4.out #blue [ortho label="bus"]`,
+			{ bounds: { width: 1200, height: 850 }, title: 'short bridge', mode: 'full' }
+		);
+		/* The junction sits at y = 372 on the run x = 482; the arc over y = 368
+		   ends a whole unit before it, so the dot lands on copper. */
+		expect(traces(result.svg)).toContain('M 518 280 H 482 V 365 A 3 3 0 0 0 482 371 V 648 H 86 V 618');
+		expect(result.svg).toContain('cx="482" cy="372"');
+	});
+
+	test('a lead that runs into another part\'s free pin is named', () => {
+		expect(() =>
+			compileSchematic(
+				`not:C0 "Sensor input" at (280, 440) #cyan
+ic:C1 "V_{out}" at (280, 320) #cyan [left="A,B,C" right="Y,Z"]
+nand:C2 "Microcontroller" at (160, 320) #cyan
+C2.out1 -> C1.Y #blue [ortho]`,
+				{ bounds: { width: 1400, height: 700 }, title: 'free pin' }
+			)
+		).toThrow('Line 4: C2.out1 sits against C1.B, which nothing is wired to: the wire leaving C2.out1 would read as joined to it. Move one of them away, or wire C1.B.');
+	});
+
+	test('a wire never runs through a pin of its own net to reach the tree', () => {
+		/* Entering same-net copper away from the joint is charged like a
+		   crossing; free, the second wire ran straight up through C0.negative. */
+		const result = compileSchematic(
+			`source:C0 "V_{out}" at (260, 240) #slate [type=voltage-dc]
+hadamard:C1 "Q" at (360, 180) #blue
+diode:C2 "V_{out}" at (220, 80) #slate [orientation=right]
+C1.out -> C2.anode #blue [ortho]
+C0.positive -> C2.cathode #blue [ortho]
+C2.cathode -> C0.negative #blue [ortho]`,
+			{ bounds: { width: 1200, height: 400 }, title: 'own pin', mode: 'full' }
+		);
+		expect(traces(result.svg)[1]).toBe('M 302 240 H 314 V 312 H 192 V 228 H 206');
+	});
+
+	test('a lead that runs into its partner from the side is named, not reported as unroutable', () => {
+		expect(() =>
+			compileSchematic(
+				`class:C0 "Microcontroller" at (880, 260) #amber
+not:C1 "x" at (400, 260) #blue [orientation=right]
+source:C2 "V_{out}" at (500, 280) #slate [type=voltage-dc]
+C2.positive -> C1.out1 #blue [ortho]`,
+				{ bounds: { width: 1000, height: 400 }, title: 'partner' }
+			)
+		).toThrow('Line 4: C1.out1 sits against C2: the wire leaving it would run straight through C2. Move one of them away.');
+	});
+
+	test('of two equal connections, the one whose growing end may join is drawn as the branch', () => {
+		/* The arrowed copy may still join the tree at its plain end, so it is
+		   the one grown from the copper the net already has. */
+		const result = compileSchematic(
+			`port:C0 "R" at (740, 540) #blue [orientation=up]
+port:C2 "1 k\\Omega" at (640, 80) #blue
+and:C4 "Q" at (920, 560) #slate [inputs=3]
+C4.in1 -> C2.out #blue [ortho label="bus"]
+C4.in1 -> C0.out #blue [ortho arrow]
+C4.in1 -> C0.out #blue [ortho]`,
+			{ bounds: { width: 1200, height: 850 }, title: 'branch', mode: 'full' }
+		);
+		expect(traces(result.svg)).toEqual(['M 872 548 H 770 V 80 H 682', 'M 770 472 H 740 V 498', 'M 872 548 H 770 V 472 H 740 V 498']);
+	});
+
+	test('a wire crossing its own net is dotted at each crossing, in either render mode', () => {
+		const source = `port:A "A" at (100, 160) #amber
+port:B "B" at (650, 160) #amber
+port:C "C" at (100, 260) #amber
+port:D "D" at (650, 260) #amber
+port:T "T" at (350, 80) #amber [orientation=down]
+port:U "U" at (350, 360) #amber [orientation=up]
+A.out -> B.in #blue [ortho net=N]
+C.out -> D.in #blue [ortho net=N]
+T.out -> U.out #blue [ortho net=N]`;
+		const bounds = { width: 750, height: 440 };
+		const full = compileSchematic(source, { bounds, title: 'dots', mode: 'full' }).svg;
+		expect(traces(full)).toEqual(['M 142 160 H 608', 'M 142 260 H 608', 'M 350 122 V 318']);
+		expect(full.match(/schematic-junction" fill="currentColor" cx="350" cy="(160|260)"/g)).toHaveLength(2);
+		const compact = compileSchematic(source, { bounds, title: 'dots' }).svg;
+		expect(compact).toContain('M 347 160 a 3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0 M 347 260 a 3 3 0 1 0 6 0');
+	});
+
+	test('a wire never reaches its pin by running along the pin\'s own lead', () => {
+		/* Its lead's nodes are closed to the search, not merely charged: priced,
+		   the third wire ran along C1's edge through C1.common and looped back. */
+		const result = compileSchematic(
+			`measure:C0 "x" at (520, 120) #blue
+switch:C1 "Microcontroller" at (180, 180) #amber [type=spdt orientation=up]
+measure:C3 "Sensor input" at (260, 200) #blue [orientation=left]
+C1.normally-closed -> C0.out #blue [ortho net=N0]
+C3.in -> C1.common #blue [ortho]
+C3.out -> C1.common #blue [ortho]`,
+			{ bounds: { width: 1200, height: 400 }, title: 'lead', mode: 'full' }
+		);
+		expect(traces(result.svg)[2]).toBe('M 220 200 H 200 V 96 H 132 V 250 H 180 V 222');
 	});
 });

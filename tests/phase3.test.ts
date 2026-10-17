@@ -129,22 +129,22 @@ describe('exhaustive quarter-turn integration', () => {
 			right: {
 				obstacle: { minX: 258, minY: 282, maxX: 342, maxY: 318 },
 				bounds: { minX: 254, minY: 260, maxX: 346, maxY: 342 },
-				anchors: { designatorY: -28, labelY: 37, designatorWidth: 7, labelWidth: 7 }
+				anchors: { designatorY: -28, labelY: 37, designatorWidth: 8.64, labelWidth: 8.64 }
 			},
 			down: {
 				obstacle: { minX: 282, minY: 258, maxX: 318, maxY: 342 },
 				bounds: { minX: 282, minY: 236, maxX: 318, maxY: 366 },
-				anchors: { designatorY: -52, labelY: 61, designatorWidth: 7, labelWidth: 7 }
+				anchors: { designatorY: -52, labelY: 61, designatorWidth: 8.64, labelWidth: 8.64 }
 			},
 			left: {
 				obstacle: { minX: 258, minY: 282, maxX: 342, maxY: 318 },
 				bounds: { minX: 254, minY: 260, maxX: 346, maxY: 342 },
-				anchors: { designatorY: -28, labelY: 37, designatorWidth: 7, labelWidth: 7 }
+				anchors: { designatorY: -28, labelY: 37, designatorWidth: 8.64, labelWidth: 8.64 }
 			},
 			up: {
 				obstacle: { minX: 282, minY: 258, maxX: 318, maxY: 342 },
 				bounds: { minX: 282, minY: 236, maxX: 318, maxY: 366 },
-				anchors: { designatorY: -52, labelY: 61, designatorWidth: 7, labelWidth: 7 }
+				anchors: { designatorY: -52, labelY: 61, designatorWidth: 8.64, labelWidth: 8.64 }
 			}
 		} as const;
 		for (const orientation of SCHEMATIC_ORIENTATIONS) {
@@ -429,10 +429,10 @@ A.out -> B.in #cyan [digital]`;
 	test('locks representative generated-SVG byte counts and repeated-symbol amortization', () => {
 		const options = { ...fence, idPrefix: 'size-regression' };
 		const fixtures = [
-			['resistor:R "R" at (100,100) #amber', 1_348],
+			['resistor:R "R" at (100,100) #amber', 1_323],
 			[
 				'resistor:R1 "R" at (100,100) #amber\nresistor:R2 "R" at (300,100) #amber\nresistor:R3 "R" at (500,100) #amber',
-				2_287
+				2_071
 			]
 		] as const;
 		for (const [source, expectedBytes] of fixtures) {

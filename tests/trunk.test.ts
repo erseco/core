@@ -1,12 +1,11 @@
 /**
- * `trunk`: branching a multi-terminal net off the copper it already has.
+ * Multi-terminal nets are trees, and `trunk` is the 0.x spelling of that.
  *
- * Without it, a net reaching four terminals is three wires that each run back
- * to the shared pin — stacked on one another where the router reuses a channel,
- * and meeting at T-junctions with no dot, which a reader cannot tell from a
- * crossing. These pin the three things that make the feature trustworthy: the
- * parser decides which end joins the net from the source text alone, the router
- * taps the net's own copper and nothing else, and every junction is drawn.
+ * Since 1.0 the router grows every orthogonal signal net as one tree: each
+ * further wire joins the nearest copper of its own net, and every junction is
+ * drawn. `trunk` is still parsed, validated and recorded — the parser decides
+ * which end joins the net from the source text alone — but the drawing no
+ * longer depends on it.
  */
 import { describe, expect, test } from 'vitest';
 
@@ -43,28 +42,31 @@ function junctions(svg: string): string[] {
 }
 
 describe('routing', () => {
-	test('each branch leaves the nearest copper of its net, at a dot', () => {
+	test('each wire joins the nearest copper of its net, at a dot', () => {
 		const result = compileSchematic(fanOut(), { ...FENCE, mode: 'full' });
 		expect(result.routing.attempts).toBe(0);
 		expect(traces(result.svg)).toEqual([
-			'M 142 260 H 260 V 100 H 378',
-			/* R2 leaves the supply's vertical run rather than VIN's terminal. */
-			'M 260 220 H 378',
-			/* R3 taps R2's wire, held two pitches off R2's terminal dot. */
-			'M 354 220 V 340 H 378',
+			/* The first wire lays a spine one pitch off VIN's escape point. */
+			'M 142 260 H 154 V 100 H 378',
+			/* R2 leaves the spine rather than VIN's terminal. */
+			'M 154 220 H 378',
+			/* R3 taps R2's wire, held two pitches off R2's terminal. */
+			'M 348 220 V 340 H 378',
 			/* R4 continues the drop R3 started: a clean L, not a midpoint dogleg. */
-			'M 354 340 V 460 H 378'
+			'M 348 340 V 460 H 378'
 		]);
 		/* Each junction is the first point of the branch it belongs to. */
-		expect(junctions(result.svg)).toEqual(['260,220', '354,220', '354,340']);
+		expect(junctions(result.svg)).toEqual(['154,220', '348,220', '348,340']);
 		expect(result.svg.match(/data-wire-trunk="from"/g)).toHaveLength(3);
 	});
 
-	test('the same net without trunk draws no junctions and routes from every terminal', () => {
-		const result = compileSchematic(fanOut('ortho'), { ...FENCE, mode: 'full' });
-		expect(junctions(result.svg)).toEqual([]);
-		expect(result.svg).not.toContain('data-wire-trunk');
-		for (const trace of traces(result.svg)) expect(trace.startsWith('M 142 260')).toBe(true);
+	test('the same net without trunk draws the same tree', () => {
+		const plain = compileSchematic(fanOut('ortho'), { ...FENCE, mode: 'full' });
+		const trunk = compileSchematic(fanOut(), { ...FENCE, mode: 'full' });
+		expect(traces(plain.svg)).toEqual(traces(trunk.svg));
+		expect(junctions(plain.svg)).toEqual(junctions(trunk.svg));
+		/* Only the recorded option differs. */
+		expect(plain.svg).not.toContain('data-wire-trunk');
 	});
 
 	test('compact modes compound junctions with the endpoint dots', () => {
@@ -94,15 +96,15 @@ describe('routing', () => {
 		expect(result.svg).toContain('data-wire-trunk="to"');
 		/* Drawn from R2 towards the tap, so the endpoint dot every signal wire
 		   ends in is the junction; no separate junction dot is needed. */
-		expect(traces(result.svg)[2]).toBe('M 192 300 H 216 V 100');
+		expect(traces(result.svg)[2]).toBe('M 192 300 H 204 V 200');
 		expect(junctions(result.svg)).toEqual([]);
 	});
 
 	test('the junction is where a branch leaves the net, not where it was tapped', () => {
 		/*
-		 * The tap is clamped to x = 434, two pitches short of R2's terminal, but the
-		 * branch's escape column is x = 440: it sets off along the wire before
-		 * turning, so the dot belongs at the turn.
+		 * The branch may not tap within two pitches of R2's terminal, so it sets
+		 * off along the wire and turns at the first lattice column clear of it;
+		 * the dot belongs at that turn.
 		 */
 		const result = compileSchematic(
 			[
@@ -114,8 +116,8 @@ describe('routing', () => {
 			].join('\n'),
 			{ ...FENCE, mode: 'full' }
 		);
-		expect(traces(result.svg)[1]).toBe('M 434 100 V 300 H 458');
-		expect(junctions(result.svg)).toEqual(['434,100']);
+		expect(traces(result.svg)[1]).toBe('M 432 100 V 300 H 458');
+		expect(junctions(result.svg)).toEqual(['432,100']);
 	});
 
 	test('a branch bridged over another net keeps its junction', () => {
@@ -133,8 +135,8 @@ describe('routing', () => {
 			].join('\n'),
 			{ bounds: { width: 700, height: 560 }, title: 'bridged', mode: 'full' }
 		);
-		expect(traces(result.svg)[2]).toBe('M 446 100 V 177 A 5 5 0 0 0 446 187 V 300 H 458');
-		expect(junctions(result.svg)).toEqual(['446,100']);
+		expect(traces(result.svg)[2]).toBe('M 432 100 V 195 A 5 5 0 0 0 432 205 V 300 H 458');
+		expect(junctions(result.svg)).toEqual(['432,100']);
 	});
 
 	test('a net with no orthogonal copper yet routes the branch from its terminal', () => {
@@ -148,11 +150,11 @@ describe('routing', () => {
 			].join('\n'),
 			{ ...FENCE, mode: 'full' }
 		);
-		expect(traces(result.svg)[1]).toBe('M 192 100 H 300 V 300 H 408');
+		expect(traces(result.svg)[1]).toBe('M 192 100 H 204 V 300 H 408');
 		expect(junctions(result.svg)).toEqual([]);
 	});
 
-	test('a branch that cannot reach its terminal from any tap names the net', () => {
+	test('a terminal walled in by a part its lead runs into is named with that part', () => {
 		/* R3's input is walled in by three blockers; one pass, so the diagnostic
 		   is the branch's own rather than a later retry's. */
 		expect(() =>
@@ -170,17 +172,16 @@ describe('routing', () => {
 				{ bounds: { width: 700, height: 560 }, title: 'walled', limits: { routingAttempts: 1 } }
 			)
 		).toThrow(
-			"Line 8: No orthogonal route from net $1's copper to R3.in clears every component and earlier trace: move R3 closer to the trunk, widen the fence bounds, or drop trunk to route from the terminal itself."
+			"Line 8: R3.in sits against B1: the wire leaving it would run straight through B1. Move one of them away."
 		);
 	});
 
-	test('a document with a trunk branch is never laid out as a bundle', () => {
+	test('a branch joins a reversal bus without any rescue pass', () => {
 		/*
-		 * Thirteen reversed wires need the bundle path, and this branch happens to
-		 * fit the bundle's shape — laid out as a set it would compile. But a
-		 * branch's shape is decided by the copper it taps, which a bundle placed
-		 * as one set does not have, so the rescue is withheld and the contention
-		 * diagnostic stands.
+		 * Thirteen reversed wires once needed a separate bundle layout, which a
+		 * branch could not take part in. Routed by net, the bus completes in the
+		 * first pass and the branch ends on L6's wire, its endpoint dot the
+		 * junction.
 		 */
 		const lines: string[] = ['port:Y "Y" at (80, 1800) #blue'];
 		for (let index = 0; index < 13; index += 1) {
@@ -188,12 +189,11 @@ describe('routing', () => {
 			lines.push(`port:R${index} "R" at (1200, ${100 + (12 - index) * 130}) #blue`);
 		}
 		for (let index = 0; index < 13; index += 1) lines.push(`L${index}.out -> R${index}.in #blue [ortho]`);
-		const bus = lines.join('\n');
-		const fence = { bounds: { width: 1400, height: 1900 }, title: 'bus' } as const;
-		expect(compileSchematic(bus, fence).routing.nudged).toBe(true);
-		expect(() => compileSchematic(`${bus}\nY.out -> R6.in #blue [ortho trunk]`, fence)).toThrow(
-			/No orthogonal route from L\d+\.out/
-		);
+		const fence = { bounds: { width: 1400, height: 1900 }, title: 'bus', mode: 'full' } as const;
+		const result = compileSchematic(`${lines.join('\n')}\nY.out -> R6.in #blue [ortho trunk]`, fence);
+		expect(result.routing.attempts).toBe(0);
+		expect(result.routing.nudged).toBe(false);
+		expect(traces(result.svg).at(-1)).toMatch(/^M 122 1800 H 216 V 1665 A .* V 880$/);
 	});
 
 	test('wires of other nets do not spend the tap budget', () => {

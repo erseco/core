@@ -361,6 +361,18 @@ not:I1 "NOT" at (750, 150) #cyan [inputs=3 outputs=3]`,
 		expect(html).toContain('d="M 8 -12 H 48"');
 	});
 
+	test('declares the measured font and never stretches text', () => {
+		const html = renderSchematic(parseSchematic('resistor:R1 "Microcontroller" at (200, 100) #amber\nic:U1 "U" at (420, 130) #cyan [left="A" right="Y"]', { bounds: { width: 600, height: 300 }, title: 'Fonts' }), {
+			bounds: { width: 600, height: 300 },
+			title: 'Fonts'
+		});
+		expect(html).toContain(`font-family="Arial, Helvetica, 'Liberation Sans', Arimo, sans-serif"`);
+		/* Text that fits carries no textLength: it renders at its own width. */
+		expect(html).toContain('<text class="schematic-label" x="0" y="37">Microcontroller</text>');
+		expect(html).toMatch(/font-size="10">A<\/text>/);
+		expect(html).not.toContain('textLength');
+	});
+
 	test('fits quantum metadata and every IC pin label inside static component geometry', () => {
 		const document = parseSchematic(
 			`qgate:Q1 "Long quantum operator" at (130, 130) #purple [parameter="parameter-value" matrix="matrix-value" phase="phase-value"]
