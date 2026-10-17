@@ -81,6 +81,13 @@ export interface RouterWire {
 	readonly joinFrom: boolean;
 	/** Whether the `to` end may be replaced by a junction on the group's copper. */
 	readonly joinTo: boolean;
+	/**
+	 * Whether the `from` end is a junction part: drawn to it rather than to the
+	 * nearest copper, joining the copper only when the junction's sides are full.
+	 */
+	readonly meetFrom?: boolean;
+	/** Whether the `to` end is a junction part. */
+	readonly meetTo?: boolean;
 	/** Label occupancy once routed, added as an obstacle for later wires. */
 	readonly label?: ((points: readonly IPoint[]) => IRect | undefined) | undefined;
 }
@@ -720,11 +727,16 @@ class Router {
 			const freeIsTo = free === wire.to;
 			const mayJoin = freeIsTo ? wire.joinFrom : wire.joinTo;
 			const first = connected.size === 1;
-			const branch = mayJoin && !first;
+			const meet = (freeIsTo ? wire.meetFrom : wire.meetTo) === true;
+			let branch = mayJoin && !first && !meet;
 			const avoid = this.#unconnectedStubs(unit, connected, free!);
-			const path = branch
-				? this.#search(unit, this.#treeSources(unit, connected), free!.escape, avoid, chosen, 'tree', connected, axesOf(undefined, free!))
-				: (this.#facing(unit, wire) ?? this.#search(unit, [anchor!.escape], free!.escape, avoid, chosen, 'point', undefined, axesOf(anchor!, free!)));
+			const grow = () => this.#search(unit, this.#treeSources(unit, connected), free!.escape, avoid, chosen, 'tree', connected, axesOf(undefined, free!));
+			let path = branch ? grow() : (this.#facing(unit, wire) ?? this.#search(unit, [anchor!.escape], free!.escape, avoid, chosen, 'point', undefined, axesOf(anchor!, free!)));
+			/* A junction with every side taken still joins: at its net's copper instead. */
+			if (path === undefined && meet && mayJoin && !first) {
+				branch = true;
+				path = grow();
+			}
 			if (path === undefined) return chosen;
 			this.#commit(chosen, path, branch && freeIsTo, branch && !freeIsTo);
 			connected.add(pointKey(free!.point));

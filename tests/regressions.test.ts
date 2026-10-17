@@ -898,6 +898,51 @@ N1.node -> C1.in #amber [ortho]`,
 		expect(result.svg).not.toContain('schematic-junction');
 	});
 
+	test('a junction with every side taken still joins, at its net\'s copper', () => {
+		/* Five wires and four sides: the fifth taps RB's wire rather than failing,
+		   which made a shipped buck-converter lab unroutable. */
+		const result = compileSchematic(
+			`resistor:RA "a" at (160, 220) #amber
+resistor:RB "b" at (520, 220) #amber
+resistor:RC "c" at (340, 80) #amber [orientation=down]
+resistor:RD "d" at (340, 380) #amber [orientation=down]
+resistor:RE "e" at (520, 350) #amber
+junction:J "J" at (340, 220) #amber
+RA.out -> J.node #amber [ortho]
+J.node -> RB.in #amber [ortho]
+RC.out -> J.node #amber [ortho]
+J.node -> RD.in #amber [ortho]
+J.node -> RE.in #amber [ortho]`,
+			{ bounds: { width: 700, height: 480 }, title: 'five', mode: 'full' }
+		);
+		expect(traces(result.svg)).toEqual(['M 202 220 H 340', 'M 340 220 H 478', 'M 340 122 V 220', 'M 340 220 V 338', 'M 444 220 V 350 H 478']);
+		expect(result.svg.match(/schematic-junction/g)).toHaveLength(1);
+	});
+
+	test('what is placed against a junction lands where it always did', () => {
+		/* Placement measures from the junction's centred rows, not the text it
+		   now draws beside the dot; measured from there, ADC overran the fence. */
+		const result = compileSchematic(
+			`source:BRIDGE "V_{sense}" at (80, 140) #blue [type=voltage-dc]
+amplifier:A1 "INA, G = 100" right-of BRIDGE by 120 #cyan [type=instrumentation]
+resistor:RF "2.2 k\\Omega" right-of A1 by 120 #amber
+junction:NODE "f_c" right-of RF by 110 #cyan
+capacitor:CF "4.7 nF" below NODE by 60 aligned-x with NODE #cyan [orientation=down]
+ground:GND "AGND" below RF by 90 aligned-x with RF #slate
+port:ADC "to ADC" right-of NODE by 150 #emerald
+BRIDGE.positive -> A1.in #blue [ortho]
+BRIDGE.negative -> GND.in #slate [ortho]
+A1.out -> RF.in #cyan [line]
+RF.out -> NODE.node #amber [line]
+NODE.node -> CF.in #cyan [ortho]
+CF.out -> GND.in #cyan [ortho]
+NODE.node -> ADC.in #emerald [line marker-end=arrow]`,
+			{ bounds: { width: 980, height: 420 }, title: 'front end' }
+		);
+		const at = (id: string) => result.document.components.find((component) => component.id === id)!;
+		expect([at('ADC').x, at('ADC').y, at('CF').x, at('CF').y]).toEqual([910.68, 140, 693.34, 293]);
+	});
+
 	test('a junction sets its text beside the dot, clear of all four exits', () => {
 		const source = 'junction:N1 "V_{x}" at (300, 200) #amber';
 		const [component] = parseSchematic(source, fence).components;
