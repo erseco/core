@@ -8,24 +8,17 @@
  *
  * @packageDocumentation
  */
+import { fmt, toMilli } from './geom.js';
 import {
-	classicalGateHeight,
 	componentTextAnchors,
 	connectionLabelPoint,
-	distributedCoordinate,
-	enumerateComponentPorts,
 	formatNumber as svgNumber,
-	isClassicalGate,
 	isDigitalComponent,
 	isQuantumSpecial,
 	isUmlComponent,
 	PORT_HOTSPOT_RADIUS,
-	quantumGateDimensions,
-	quantumTrackCoordinate,
-	quantumTrackSpan,
 	routeConnections,
 	validateDocumentGeometry,
-	type IcPinSide,
 	type RoutedConnection
 } from './layout.js';
 import {
@@ -37,22 +30,15 @@ import {
 } from './limits.js';
 import { assertParsedSchematicDocument } from './parser.js';
 import { parsedSchematicRoutes } from './route-cache.js';
+import { colorAttributes, LENGTH_FIT, TEXT_PAINT } from './symbols/common.js';
+import { definition, placedPorts, turnOf } from './symbols/index.js';
 import {
 	QUANTUM_GATE_KINDS,
 	SCHEMD_OUTPUT_MODES,
 	SCHEMD_SEMANTIC_HOOKS,
 	SchematicSyntaxError,
-	type ClassicalGateComponent,
 	type CompileSchematicOptions,
-	type DigitalComponent,
-	type DiodeComponent,
-	type ElectricalComponent,
-	type GroundComponent,
-	type IntegratedCircuitComponent,
-	type PassiveComponent,
 	type QuantumGateComponent,
-	type QuantumSpecialComponent,
-	type TransistorComponent,
 	type SchematicColor,
 	type SchematicComponent,
 	type SchematicConnection,
@@ -60,12 +46,9 @@ import {
 	type SchematicPoint,
 	type SchematicSemanticHook,
 	type SchematicSignalMarker,
-	type SchemdOutputMode,
-	type UmlClassComponent,
-	type UmlComponent,
-	type UmlStateComponent
+	type SchemdOutputMode
 } from './types.js';
-import { mathLabelText, mathLabelTextWidth, renderMathLabelTspans } from './math-label.js';
+import { mathLabelText, renderMathLabelTspans } from './math-label.js';
 import { escapeXml } from './xml.js';
 
 /**
@@ -101,10 +84,6 @@ interface NormalizedCompileOptions extends CompileSchematicOptions {
 	limits: SchematicResolvedLimits;
 }
 
-/** Shared static text paint: solid glyphs that never inherit the vector stroke. */
-const TEXT_PAINT = 'fill="currentColor" stroke="none"';
-/** Shared `textLength` fitting policy for width-clamped labels. */
-const LENGTH_FIT = 'lengthAdjust="spacingAndGlyphs"';
 
 /** Shared geometry of the designator/label pair every component emits. */
 const TEXT_LABEL_GEOMETRY = 'text-anchor="middle" font-size="12"';
@@ -298,24 +277,9 @@ function normalizeCompileOptions(value: unknown): NormalizedCompileOptions {
 }
 
 /**
- * Estimate a bounded SVG `textLength` using Unicode code points.
- *
- * @param value - Text being fitted.
- * @param maximum - Maximum permitted length in viewBox units.
- * @param advance - Estimated width per Unicode code point.
- * @returns Length clamped to the inclusive range from one to `maximum`.
- */
-function fittedTextLength(value: string, maximum: number, advance: number): number {
-	return Math.max(1, Math.min(Math.ceil(mathLabelTextWidth(value, advance)), maximum));
-}
-
-/**
  * Compute a stable compact FNV-1a-style identifier suffix.
  *
  * This is a deterministic namespace helper, not a cryptographic hash.
- *
- * @param value - Diagram signature to hash.
- * @returns Unsigned base-36 hash text.
  */
 function stableHash(value: string): string {
 	let hash = 2166136261;
@@ -326,771 +290,32 @@ function stableHash(value: string): string {
 	return (hash >>> 0).toString(36);
 }
 
-/** Narrow a component union to a quantum gate (renderer-only classification). */
-function isQuantumGate(component: SchematicComponent): component is QuantumGateComponent {
-	return QUANTUM_GATE_KINDS.includes(component.kind as QuantumGateComponent['kind']);
-}
-
 /** Resolve parser-validated quarter turns to compact SVG degrees. */
 function componentRotation(component: SchematicComponent): number {
-	if (!('orientation' in component)) return 0;
-	switch (component.orientation) {
-		case 'down':
-			return 90;
-		case 'left':
-			return 180;
-		case 'up':
-			return 270;
-		default:
-			return 0;
-	}
+	return turnOf(component) * 90;
 }
 
-/**
- * Convert a sanitized color record into compact theme-aware SVG attributes.
- *
- * @param color - Parser-validated semantic token, CSS color, or custom alias.
- * @param extraClass - Optional compiler-owned class suffixes.
- * @returns Escaped class, fill, and safe style attributes.
- */
-function colorAttributes(color: SchematicColor, extraClass = ''): string {
-	const suffix = extraClass === '' ? '' : ` ${extraClass}`;
-	const fill = extraClass.split(' ').includes('schematic-node-fill') ? ' fill="currentColor"' : '';
-	if (color.kind === 'token') {
-		return `class="schematic-token schematic-token--${color.value}${suffix}"${fill}`;
-	}
-	if (color.kind === 'css') {
-		return `class="schematic-token schematic-token--custom${suffix}"${fill} style="color:${escapeXml(color.value)};--schematic-vector:${escapeXml(color.value)}"`;
-	}
-	const safeAlias = color.value.replace(/[^a-z0-9-]/gi, '-');
-	return `class="schematic-token schematic-token--alias schematic-color--${safeAlias}${suffix}"${fill} style="color:var(--schematic-color-${safeAlias},var(--schematic-vector-fallback,currentColor));--schematic-vector:var(--schematic-color-${safeAlias},var(--schematic-vector-fallback,currentColor))"`;
-}
-
-/**
- * Approximate the concave input contour of IEEE OR-family gates at one Y coordinate.
- *
- * @param kind - Gate kind; XOR receives its additional left offset.
- * @param y - Relative terminal Y coordinate.
- * @param height - Dynamic gate height.
- * @returns Relative X coordinate on the input boundary.
- */
-function orInputBoundaryX(kind: ClassicalGateComponent['kind'], y: number, height: number): number {
-	const halfHeight = height / 2;
-	const progress = (1 - y / halfHeight) / 2;
-	const start = kind === 'xor' || kind === 'xnor' ? -38 : -32;
-	return start + 40 * progress * (1 - progress);
-}
-
-/**
- * Approximate the convex output contour of an IEEE OR-family gate.
- *
- * @param y - Relative terminal Y coordinate.
- * @param height - Dynamic gate height.
- * @returns Relative X coordinate on the output curve.
- */
-function orOutputBoundaryX(y: number, height: number): number {
-	const halfHeight = height / 2;
-	const progress = Math.sqrt(Math.max(0, 1 - Math.abs(y) / halfHeight));
-	const inverse = 1 - progress;
-	return -32 * inverse * inverse + 6 * inverse * progress + 32 * progress * progress;
-}
-
-/**
- * Resolve the physical gate contour X coordinate for a distributed terminal.
- *
- * @param component - Classical gate with standard and dimensions.
- * @param direction - Input or output side.
- * @param y - Relative terminal Y coordinate.
- * @returns Relative contour coordinate used to terminate a pin stub.
- */
-function gateBoundaryX(
-	component: ClassicalGateComponent,
-	direction: 'input' | 'output',
-	y: number
-): number {
-	if (component.standard === 'iec') return direction === 'input' ? -32 : 32;
-	const height = classicalGateHeight(component);
-	if (direction === 'input') {
-		if (component.kind === 'or' || component.kind === 'nor' || component.kind === 'xor' || component.kind === 'xnor') {
-			return orInputBoundaryX(component.kind, y, height);
-		}
-		return component.kind === 'not' ? -30 : -32;
-	}
-	if (component.kind === 'and' || component.kind === 'nand') {
-		const normalized = y / (height / 2);
-		return 32 * Math.sqrt(Math.max(0, 1 - normalized * normalized));
-	}
-	if (component.kind === 'or' || component.kind === 'nor' || component.kind === 'xor' || component.kind === 'xnor') {
-		return orOutputBoundaryX(y, height);
-	}
-	return 30 - 60 * (Math.abs(y) / (height / 2));
-}
-
-/**
- * Identify gates whose outputs carry an inversion bubble.
- *
- * @param component - Classical gate to inspect.
- * @returns Whether every output receives an inversion marker.
- */
-function hasOutputInversion(component: ClassicalGateComponent): boolean {
-	return component.kind === 'nand' || component.kind === 'nor' || component.kind === 'xnor' || component.kind === 'not';
-}
-
-/**
- * Render dynamically distributed input and output terminal stubs.
- *
- * @param component - Gate controlling terminal counts and contour geometry.
- * @param paint - Trusted compiler-generated SVG paint attributes.
- * @returns Concatenated path markup for all terminal stubs.
- */
-function gateStubs(component: ClassicalGateComponent, paint: string): string {
-	const height = classicalGateHeight(component);
-	const inputs = Array.from({ length: component.inputs }, (_, index) => {
-		const y = distributedCoordinate(index, component.inputs, height);
-		return `<path ${paint} d="M -48 ${svgNumber(y)} H ${svgNumber(gateBoundaryX(component, 'input', y))}" />`;
-	}).join('');
-	const outputs = Array.from({ length: component.outputs }, (_, index) => {
-		const y = distributedCoordinate(index, component.outputs, height);
-		const boundary = gateBoundaryX(component, 'output', y);
-		const start = boundary + (hasOutputInversion(component) ? 8 : 0);
-		return `<path ${paint} d="M ${svgNumber(start)} ${svgNumber(y)} H 48" />`;
-	}).join('');
-	return inputs + outputs;
-}
-
-/**
- * Render one inversion bubble for each output of NAND, NOR, or NOT gates.
- *
- * @param component - Gate to inspect and distribute.
- * @param paint - Trusted SVG paint attributes.
- * @returns Concatenated circle markup, or an empty string for non-inverting gates.
- */
-function inversionBubbles(component: ClassicalGateComponent, paint: string): string {
-	if (!hasOutputInversion(component)) return '';
-	const height = classicalGateHeight(component);
-	return Array.from({ length: component.outputs }, (_, index) => {
-		const y = distributedCoordinate(index, component.outputs, height);
-		const center = gateBoundaryX(component, 'output', y) + 4;
-		return `<circle ${paint} cx="${svgNumber(center)}" cy="${svgNumber(y)}" r="4" />`;
-	}).join('');
-}
-
-/**
- * Render an IEC rectangular logic block with its standard operator glyph.
- *
- * @param component - IEC classical gate.
- * @param paint - Trusted SVG paint attributes.
- * @returns Complete local-coordinate gate markup.
- */
-function iecGate(component: ClassicalGateComponent, paint: string): string {
-	const height = classicalGateHeight(component);
-	const symbol: Readonly<Record<ClassicalGateComponent['kind'], string>> = {
-		and: '&amp;',
-		nand: '&amp;',
-		or: '≥1',
-		nor: '≥1',
-		xor: '=1',
-		xnor: '=1',
-		not: '1'
-	};
-	return `<rect ${paint} x="-32" y="${-height / 2}" width="64" height="${height}" rx="2" /><text class="schematic-gate-symbol" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="14">${symbol[component.kind]}</text>${inversionBubbles(component, paint)}${gateStubs(component, paint)}`;
-}
-
-/**
- * Render an IEEE gate contour scaled to arbitrary terminal counts.
- *
- * @param component - IEEE classical gate.
- * @param paint - Trusted SVG paint attributes.
- * @returns Complete local-coordinate gate markup.
- */
-function ieeeGate(component: ClassicalGateComponent, paint: string): string {
-	const height = classicalGateHeight(component);
-	const top = -height / 2;
-	const bottom = height / 2;
-	let contour: string;
-	if (component.kind === 'not') {
-		contour = `<path ${paint} d="M -30 ${top} L 30 0 L -30 ${bottom} Z" />`;
-	} else if (component.kind === 'and' || component.kind === 'nand') {
-		contour = `<path ${paint} d="M -32 ${top} H 0 A 32 ${height / 2} 0 0 1 0 ${bottom} H -32 Z" />`;
-	} else {
-		const xorArc =
-			component.kind === 'xor' || component.kind === 'xnor' ? `<path ${paint} d="M -38 ${top} Q -18 0 -38 ${bottom}" />` : '';
-		contour = `<path ${paint} d="M -32 ${top} Q 3 ${top} 32 0 Q 3 ${bottom} -32 ${bottom} Q -12 0 -32 ${top} Z" />${xorArc}`;
-	}
-	return `${contour}${inversionBubbles(component, paint)}${gateStubs(component, paint)}`;
-}
-
-/**
- * Render a qgate label and optional parameter, phase, and matrix rows.
- *
- * @param component - Quantum gate containing micro-math-capable text fields.
- * @returns Centered SVG text rows in deterministic metadata order.
- */
-function quantumText(component: QuantumGateComponent): string {
-	const symbols: Readonly<Record<QuantumGateComponent['kind'], string>> = {
-		qgate: '', cnot: '⊕',
-		hadamard: 'H', xgate: 'X', ygate: 'Y', zgate: 'Z', sgate: 'S', sdg: 'S†',
-		tgate: 'T', tdg: 'T†', sx: '√X', phase: 'P', rx: 'Rx', ry: 'Ry', rz: 'Rz', ugate: 'U'
-	};
-	const details = [component.parameter, component.phase, component.matrix].filter(
-		(value): value is string => value !== undefined && value !== ''
-	);
-	const rows = [component.kind === 'qgate' ? component.label : symbols[component.kind], ...details];
-	const { bodyWidth } = quantumGateDimensions(component);
-	const start = -((rows.length - 1) * 15) / 2 + 4;
-	return rows
-		.map(
-			(value, index) =>
-					`<text class="${index === 0 ? 'schematic-gate-symbol' : 'schematic-quantum-detail'}" ${TEXT_PAINT} x="0" y="${start + index * 15}" text-anchor="middle" font-size="${index === 0 ? 14 : 10}" textLength="${fittedTextLength(value, bodyWidth - 12, index === 0 ? 7 : 5)}" ${LENGTH_FIT}>${renderMathLabelTspans(value)}</text>`
-		)
-		.join('');
-}
-
-/** Render the one canonical shell shared by all single-qubit operator boxes. */
-function quantumGateShell(component: QuantumGateComponent, paint: string): string {
-	const { bodyWidth, bodyHeight, stubExtent } = quantumGateDimensions(component);
-	const halfWidth = bodyWidth / 2;
-	return `<rect ${paint} x="${svgNumber(-halfWidth)}" y="${svgNumber(-bodyHeight / 2)}" width="${svgNumber(bodyWidth)}" height="${svgNumber(bodyHeight)}" rx="3" /><path ${paint} d="M ${svgNumber(-stubExtent)} 0 H ${svgNumber(-halfWidth)} M ${svgNumber(halfWidth)} 0 H ${svgNumber(stubExtent)}" />`;
-}
-
-/**
- * Render standard, Schottky, Zener, or LED diode vectors.
- *
- * @param component - Diode selecting the physical variant.
- * @param paint - Trusted SVG paint attributes.
- * @returns Local-coordinate SVG paths.
- */
-function diodeShape(component: DiodeComponent, paint: string): string {
-	const junction = `<path ${paint} d="M -42 0 H -14 M -14 -16 L 10 0 L -14 16 Z M 10 -16 V 16 M 10 0 H 42" />`;
-	switch (component.diodeType) {
-		case 'standard':
-			return junction;
-		case 'schottky':
-			return `${junction}<path ${paint} d="M 10 -16 H 16 V -10 M 10 16 H 4 V 10" />`;
-		case 'zener':
-			return `${junction}<path ${paint} d="M 4 -20 L 10 -16 M 10 16 L 16 20" />`;
-		case 'led':
-			return `${junction}<path ${paint} d="M -1 -18 L 11 -30 M 6 -30 H 11 V -25 M 8 -14 L 20 -26 M 15 -26 H 20 V -21" />`;
-		case 'photodiode':
-			return `${junction}<path ${paint} d="M 18 -30 L 6 -18 M 6 -18 H 11 V -23 M 27 -22 L 15 -10 M 15 -10 H 20 V -15" />`;
-		case 'varactor':
-			return `${junction}<path ${paint} d="M 16 -16 V 16" />`;
-		case 'scr':
-			return `${junction}<path ${paint} d="M 10 10 L 24 22 H 34" />`;
-		case 'triac':
-			return `<path ${paint} d="M -42 0 H -15 L 9 -15 V 15 L -15 0 M 42 0 H 15 L -9 15 V -15 L 15 0 M 5 12 L 23 25 H 34" />`;
-	}
-}
-
-/**
- * Render a bipolar-junction transistor with polarity-correct emitter arrow.
- *
- * @param component - NPN or PNP transistor.
- * @param paint - Trusted SVG paint attributes.
- * @returns Local-coordinate circle and path markup.
- */
-function bjtShape(component: TransistorComponent, paint: string): string {
-	const emitterArrow =
-		component.transistorType === 'npn' ? 'M 12 17 L 24 25 L 20 12' : 'M 0 7 L 12 17 L 0 20';
-	return `<circle ${paint} cx="0" cy="0" r="30" /><path ${paint} d="M -42 0 H -9 M -9 -18 V 18 M -9 -10 L 20 -22 H 42 M -9 10 L 20 22 H 42 ${emitterArrow}" />`;
-}
-
-/**
- * Render an enhancement MOSFET with polarity-specific gate and arrow treatment.
- *
- * @param component - NMOS or PMOS transistor.
- * @param paint - Trusted SVG paint attributes.
- * @returns Local-coordinate vector markup.
- */
-function mosfetShape(component: TransistorComponent, paint: string): string {
-	const pChannel = component.transistorType.startsWith('p');
-	const jfet = component.transistorType.endsWith('jfet');
-	const igbt = component.transistorType.endsWith('igbt');
-	if (jfet) {
-		const arrow = pChannel ? 'M -5 -5 L 5 0 L -5 5' : 'M 5 -5 L -5 0 L 5 5';
-		return `<circle ${paint} cx="0" cy="0" r="30" /><path ${paint} d="M -42 0 H 4 M 4 -18 V 18 M 4 -12 L 20 -22 H 42 M 4 12 L 20 22 H 42 ${arrow}" />`;
-	}
-	const control = pChannel
-		? `<path ${paint} d="M -42 0 H -16" /><circle ${paint} cx="-11" cy="0" r="5" />`
-		: `<path ${paint} d="M -42 0 H -10" />`;
-	const arrow = pChannel ? 'M 16 -3 L 5 3 L 16 9' : 'M 5 -3 L 16 3 L 5 9';
-	return `<circle ${paint} cx="0" cy="0" r="30" />${control}<path ${paint} d="M -10 -19 V 19 M 4 -17 V 17 M 4 -11 L 20 -22 H 42 M 4 11 L 20 22 H 42 ${arrow}${igbt ? ' M 9 -11 V 11' : ''}" />`;
-}
-
-/**
- * Dispatch transistor rendering to its BJT or MOSFET family.
- *
- * @param component - Validated transistor node.
- * @param paint - Trusted SVG paint attributes.
- * @returns Local-coordinate transistor markup.
- */
-function transistorShape(component: TransistorComponent, paint: string): string {
-	return component.transistorType === 'npn' || component.transistorType === 'pnp'
-		? bjtShape(component, paint)
-		: mosfetShape(component, paint);
-}
-
-/**
- * Render signal, earth, or chassis ground vectors.
- *
- * @param component - Ground component selecting the symbol style.
- * @param paint - Trusted SVG paint attributes.
- * @returns Local-coordinate path markup.
- */
-function groundShape(component: GroundComponent, paint: string): string {
-	const stem = `<path ${paint} d="M 0 -42 V -10" />`;
-	switch (component.groundStyle) {
-		case 'signal':
-			return `${stem}<path ${paint} d="M -15 -10 H 15 L 0 15 Z" />`;
-		case 'earth':
-			return `${stem}<path ${paint} d="M -20 -10 H 20 M -13 -3 H 13 M -6 4 H 6" />`;
-		case 'chassis':
-			return `${stem}<path ${paint} d="M -20 -10 H 20 M -14 -10 L -20 2 M 0 -10 L -6 2 M 14 -10 L 8 2" />`;
-	}
-}
-
-/**
- * Render one side of dynamic IC terminal stubs and fitted pin labels.
- *
- * @param component - Integrated circuit with computed body dimensions.
- * @param side - Physical edge to render.
- * @param paint - Trusted SVG paint attributes.
- * @returns Concatenated local-coordinate pin and text markup.
- */
-function icPinMarkup(
-	component: IntegratedCircuitComponent,
-	side: IcPinSide,
-	paint: string
-): string {
-	const pins = component.pins[side];
-	const halfWidth = component.bodyWidth / 2;
-	const halfHeight = component.bodyHeight / 2;
-	const sign = side === 'left' || side === 'top' ? -1 : 1;
-	/*
-	 * The side is resolved once, outside the loop. Deriving it per pin measured
-	 * every label twice — once for a horizontal fit and once for a vertical one —
-	 * and threw one of the two away, doubling the micro-math parse for the
-	 * densest text in the document.
-	 */
-	if (side === 'left' || side === 'right') {
-		const stubX = svgNumber(sign * (halfWidth + 16));
-		const bodyX = svgNumber(sign * halfWidth);
-		const head = side === 'left' ? stubX : bodyX;
-		const tail = side === 'left' ? bodyX : stubX;
-		const labelX = svgNumber(sign * (halfWidth - 5));
-		const anchor = side === 'left' ? 'start' : 'end';
-		const fitted = Math.max(8, halfWidth - 10);
-		return pins
-			.map((pin, index) => {
-				const y = distributedCoordinate(index, pins.length, component.bodyHeight);
-				return `<path ${paint} d="M ${head} ${svgNumber(y)} H ${tail}" /><text class="schematic-pin-label" ${TEXT_PAINT} x="${labelX}" y="${svgNumber(y + 3)}" text-anchor="${anchor}" font-size="10" textLength="${fittedTextLength(pin, fitted, 4)}" ${LENGTH_FIT}>${escapeXml(pin)}</text>`;
-			})
-			.join('');
-	}
-	const stubY = svgNumber(sign * (halfHeight + 16));
-	const bodyY = svgNumber(sign * halfHeight);
-	const head = side === 'top' ? stubY : bodyY;
-	const tail = side === 'top' ? bodyY : stubY;
-	const labelY = svgNumber(sign * (halfHeight - 5));
-	const turn = side === 'top' ? 90 : -90;
-	const fitted = Math.max(8, halfHeight - 10);
-	return pins
-		.map((pin, index) => {
-			const x = svgNumber(distributedCoordinate(index, pins.length, component.bodyWidth));
-			return `<path ${paint} d="M ${x} ${head} V ${tail}" /><text class="schematic-pin-label" ${TEXT_PAINT} x="${x}" y="${labelY}" text-anchor="start" font-size="10" textLength="${fittedTextLength(pin, fitted, 4)}" ${LENGTH_FIT} transform="rotate(${turn} ${x} ${labelY})">${escapeXml(pin)}</text>`;
-		})
-		.join('');
-}
-
-/**
- * Render a complete polymorphic IC body, all side pins, and its math-capable label.
- *
- * @param component - Integrated circuit node.
- * @param paint - Trusted SVG paint attributes.
- * @returns Complete local-coordinate chip markup.
- */
-function integratedCircuitShape(component: IntegratedCircuitComponent, paint: string): string {
-	const rotation = componentRotation(component);
-	const label = `<text class="schematic-gate-symbol" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="12" textLength="${fittedTextLength(component.label, component.bodyWidth - 12, 7)}" ${LENGTH_FIT}>${renderMathLabelTspans(component.label)}</text>`;
-	return `<rect ${paint} x="${svgNumber(-component.bodyWidth / 2)}" y="${svgNumber(-component.bodyHeight / 2)}" width="${svgNumber(component.bodyWidth)}" height="${svgNumber(component.bodyHeight)}" rx="3" />${icPinMarkup(component, 'left', paint)}${icPinMarkup(component, 'right', paint)}${icPinMarkup(component, 'top', paint)}${icPinMarkup(component, 'bottom', paint)}${rotation === 0 ? label : `<g transform="rotate(${-rotation})">${label}</g>`}`;
-}
-
-/** Serialize one left-aligned UML compartment row. */
-function umlRow(value: string, x: number, y: number): string {
-	return `<text class="schematic-uml-text schematic-uml-row" ${TEXT_PAINT} x="${svgNumber(x)}" y="${svgNumber(y)}" font-size="12">${renderMathLabelTspans(value)}</text>`;
-}
-
-/** Render a dynamically sized three-compartment UML class. */
-function umlClassShape(component: UmlClassComponent, paint: string): string {
-	const left = -component.bodyWidth / 2;
-	const top = -component.bodyHeight / 2;
-	const headerHeight = 36 + (component.stereotype === undefined ? 0 : 14);
-	const attributeHeight = Math.max(24, component.attributes.length * 16 + 8);
-	const attributeSeparator = top + headerHeight;
-	const operationSeparator = attributeSeparator + attributeHeight;
-	const stereotype =
-		component.stereotype === undefined
-			? ''
-			: `<text class="schematic-uml-text schematic-uml-stereotype" ${TEXT_PAINT} x="0" y="${svgNumber(top + 13)}" text-anchor="middle" font-size="11">«${renderMathLabelTspans(component.stereotype)}»</text>`;
-	const nameY = top + (component.stereotype === undefined ? 23 : 32);
-	const attributes = component.attributes
-		.map((row, index) => umlRow(row, left + 8, attributeSeparator + 17 + index * 16))
-		.join('');
-	const operations = component.operations
-		.map((row, index) => umlRow(row, left + 8, operationSeparator + 17 + index * 16))
-		.join('');
-	return `<rect ${paint} x="${svgNumber(left)}" y="${svgNumber(top)}" width="${svgNumber(component.bodyWidth)}" height="${svgNumber(component.bodyHeight)}" rx="2" /><path ${paint} d="M ${svgNumber(left)} ${svgNumber(attributeSeparator)} H ${svgNumber(-left)} M ${svgNumber(left)} ${svgNumber(operationSeparator)} H ${svgNumber(-left)}" />${stereotype}<text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="${svgNumber(nameY)}" text-anchor="middle" font-size="13" font-weight="600">${renderMathLabelTspans(component.label)}</text>${attributes}${operations}`;
-}
-
-/** Render a UML state and its optional behavior compartment. */
-function umlStateShape(component: UmlStateComponent, paint: string): string {
-	const left = -component.bodyWidth / 2;
-	const top = -component.bodyHeight / 2;
-	const separator = top + 32;
-	const rows = component.details
-		.map((row, index) => umlRow(row, left + 8, separator + 17 + index * 16))
-		.join('');
-	return `<rect ${paint} x="${svgNumber(left)}" y="${svgNumber(top)}" width="${svgNumber(component.bodyWidth)}" height="${svgNumber(component.bodyHeight)}" rx="10" />${component.details.length === 0 ? '' : `<path ${paint} d="M ${svgNumber(left)} ${svgNumber(separator)} H ${svgNumber(-left)}" />`}<text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="${svgNumber(top + 21)}" text-anchor="middle" font-size="13" font-weight="600">${renderMathLabelTspans(component.label)}</text>${rows}`;
-}
-
-/** Render any first-class UML component in local coordinates. */
-function umlComponentShape(component: UmlComponent, paint: string, nodePaint: string): string {
-	if (
-		component.kind === 'class' || component.kind === 'interface' ||
-		component.kind === 'enumeration' || component.kind === 'datatype' || component.kind === 'object'
-	) return umlClassShape(component, paint);
-	if (component.kind === 'state') return umlStateShape(component, paint);
-	switch (component.kind) {
-		case 'actor':
-			return `<circle ${paint} cx="0" cy="-28" r="9" /><path ${paint} d="M 0 -19 V 12 M -20 -5 H 20 M 0 12 L -17 37 M 0 12 L 17 37" /><text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="49" text-anchor="middle" font-size="12">${renderMathLabelTspans(component.label)}</text>`;
-		case 'usecase':
-			return `<ellipse ${paint} cx="0" cy="0" rx="${svgNumber(component.bodyWidth / 2)}" ry="${svgNumber(component.bodyHeight / 2)}" /><text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="13">${renderMathLabelTspans(component.label)}</text>`;
-		case 'lifeline': {
-			const top = -component.bodyHeight / 2;
-			const left = -component.bodyWidth / 2;
-			return `<rect ${paint} x="${svgNumber(left)}" y="${svgNumber(top)}" width="${svgNumber(component.bodyWidth)}" height="32" rx="2" /><text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="${svgNumber(top + 21)}" text-anchor="middle" font-size="12">${renderMathLabelTspans(component.label)}</text><path ${paint} stroke-dasharray="6 5" d="M 0 ${svgNumber(top + 32)} V ${svgNumber(component.bodyHeight / 2)}" />`;
-		}
-		case 'note': {
-			const left = -component.bodyWidth / 2;
-			const top = -component.bodyHeight / 2;
-			const right = component.bodyWidth / 2;
-			return `<path ${paint} d="M ${svgNumber(left)} ${svgNumber(top)} H ${svgNumber(right - 14)} L ${svgNumber(right)} ${svgNumber(top + 14)} V ${svgNumber(-top)} H ${svgNumber(left)} Z M ${svgNumber(right - 14)} ${svgNumber(top)} V ${svgNumber(top + 14)} H ${svgNumber(right)}" /><text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="12">${renderMathLabelTspans(component.label)}</text>`;
-		}
-		case 'package': {
-			const left = -component.bodyWidth / 2;
-			const top = -component.bodyHeight / 2;
-			return `<path ${paint} d="M ${svgNumber(left)} ${svgNumber(top + 12)} V ${svgNumber(-top)} H ${svgNumber(-left)} V ${svgNumber(top)} H ${svgNumber(left + Math.min(54, component.bodyWidth / 2))} L ${svgNumber(left + Math.min(64, component.bodyWidth / 2 + 10))} ${svgNumber(top + 12)} Z" /><text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="13">${renderMathLabelTspans(component.label)}</text>`;
-		}
-		case 'component':
-		case 'artifact':
-		case 'node':
-		case 'device':
-		case 'execution':
-		case 'system':
-		case 'action':
-		case 'object-node':
-		case 'partition':
-		case 'activation':
-		case 'fragment':
-		case 'interaction':
-		case 'region': {
-			const left = -component.bodyWidth / 2;
-			const top = -component.bodyHeight / 2;
-			const right = -left;
-			const bottom = -top;
-			if (component.kind === 'activation') return `<rect ${paint} x="${svgNumber(left)}" y="${svgNumber(top)}" width="${svgNumber(component.bodyWidth)}" height="${svgNumber(component.bodyHeight)}" />`;
-			if (component.kind === 'fragment' || component.kind === 'interaction') {
-				return `<rect ${paint} x="${svgNumber(left)}" y="${svgNumber(top)}" width="${svgNumber(component.bodyWidth)}" height="${svgNumber(component.bodyHeight)}" /><path ${paint} d="M ${svgNumber(left)} ${svgNumber(top + 20)} H ${svgNumber(left + 58)} L ${svgNumber(left + 68)} ${svgNumber(top + 10)} V ${svgNumber(top)}" /><text class="schematic-uml-text" ${TEXT_PAINT} x="${svgNumber(left + 6)}" y="${svgNumber(top + 14)}" font-size="11">${component.kind === 'interaction' ? 'ref' : 'alt'}</text><text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="12">${renderMathLabelTspans(component.label)}</text>`;
-			}
-			const rx = component.kind === 'action' ? 10 : 1;
-			const dash = component.kind === 'region' ? ' stroke-dasharray="6 4"' : '';
-			const icon = component.kind === 'component'
-				? `<path ${paint} d="M ${svgNumber(right - 22)} ${svgNumber(top + 10)} h 14 v 10 h -14 z M ${svgNumber(right - 22)} ${svgNumber(top + 25)} h 14 v 10 h -14 z" />`
-				: component.kind === 'artifact'
-					? `<path ${paint} d="M ${svgNumber(right - 16)} ${svgNumber(top)} v 16 h 16" />`
-					: component.kind === 'node' || component.kind === 'device' || component.kind === 'execution'
-						? `<path ${paint} d="M ${svgNumber(left)} ${svgNumber(top + 10)} l 12 -10 h ${svgNumber(component.bodyWidth)} l -12 10 M ${svgNumber(right)} ${svgNumber(top)} v ${svgNumber(component.bodyHeight - 10)} l -12 10" />`
-						: component.kind === 'partition' ? `<path ${paint} d="M ${svgNumber(left + 28)} ${svgNumber(top)} V ${svgNumber(bottom)}" />` : '';
-			return `<rect ${paint}${dash} x="${svgNumber(left)}" y="${svgNumber(top)}" width="${svgNumber(component.bodyWidth)}" height="${svgNumber(component.bodyHeight)}" rx="${rx}" />${icon}<text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="12">${renderMathLabelTspans(component.label)}</text>`;
-		}
-		case 'provided-interface':
-			return `<circle ${paint} cx="0" cy="0" r="10" />`;
-		case 'required-interface':
-			return `<path ${paint} d="M 0 -10 A 10 10 0 0 0 0 10" />`;
-		case 'component-port':
-			return `<rect ${paint} x="-7" y="-7" width="14" height="14" />`;
-		case 'decision':
-		case 'merge':
-		case 'choice':
-			return `<path ${paint} d="M 0 -17 L 17 0 0 17 -17 0 Z" />`;
-		case 'fork':
-		case 'join':
-			return `<rect ${nodePaint} x="-38" y="-4" width="76" height="8" rx="1" />`;
-		case 'activity-final':
-			return `<circle ${paint} cx="0" cy="0" r="11" /><circle ${nodePaint} cx="0" cy="0" r="6" />`;
-		case 'flow-final':
-			return `<circle ${paint} cx="0" cy="0" r="11" /><path ${paint} d="M -7 -7 L 7 7 M 7 -7 L -7 7" />`;
-		case 'send-signal':
-			return `<path ${paint} d="M -21 -14 H 5 L 21 0 5 14 H -21 Z" />`;
-		case 'receive-signal':
-			return `<path ${paint} d="M -21 -14 H 21 L 5 0 21 14 H -21 Z" />`;
-		case 'destruction':
-			return `<path ${paint} d="M -10 -10 L 10 10 M 10 -10 L -10 10" />`;
-		case 'gate':
-		case 'found':
-		case 'lost':
-			return `<circle ${component.kind === 'lost' ? paint : nodePaint} cx="0" cy="0" r="5" />`;
-		case 'state-junction':
-			return `<circle ${nodePaint} cx="0" cy="0" r="7" />`;
-		case 'history':
-			return `<circle ${paint} cx="0" cy="0" r="11" /><text class="schematic-uml-text" ${TEXT_PAINT} x="0" y="4" text-anchor="middle" font-size="11">H${component.variant === 'deep' ? '*' : ''}</text>`;
-		case 'entry':
-		case 'exit':
-			return `<circle ${paint} cx="0" cy="0" r="10" />${component.kind === 'exit' ? `<path ${paint} d="M -6 -6 L 6 6 M 6 -6 L -6 6" />` : ''}`;
-		case 'terminate':
-			return `<path ${paint} d="M -9 -9 L 9 9 M 9 -9 L -9 9" />`;
-		case 'initial':
-			return `<circle ${nodePaint} cx="0" cy="0" r="10" />`;
-		case 'final':
-			return `<circle ${paint} cx="0" cy="0" r="11" /><circle ${nodePaint} cx="0" cy="0" r="6" />`;
-	}
-}
-
-/** Render a passive family from one canonical two-terminal coordinate system. */
-function passiveShape(component: PassiveComponent, paint: string): string {
-	const variant = component.passiveType ?? 'fixed';
-	if (component.kind === 'resistor') {
-		const base = `<path ${paint} d="M -42 0 H -26 L -20 -12 L -10 12 L 0 -12 L 10 12 L 20 -12 L 26 0 H 42" />`;
-		if (variant === 'variable' || variant === 'rheostat' || variant === 'potentiometer') return `${base}<path ${paint} d="M -18 20 L 18 -20 M 11 -20 H 18 V -13${variant === 'potentiometer' ? ' M 0 28 V 12' : ''}" />`;
-		if (variant === 'thermistor') return `${base}<path ${paint} d="M -18 19 L 18 -19 M 10 -19 H 18 V -11" />`;
-		if (variant === 'ldr') return `${base}<path ${paint} d="M 15 -27 L 4 -16 M 4 -16 H 9 V -21 M 27 -20 L 16 -9 M 16 -9 H 21 V -14" />`;
-		return base;
-	}
-	if (component.kind === 'capacitor') {
-		const rightPlate = variant === 'polarized' ? 'M 7 -18 Q 13 0 7 18' : 'M 7 -18 V 18';
-		const variable = variant === 'variable' ? `<path ${paint} d="M -18 20 L 18 -20 M 11 -20 H 18 V -13" />` : '';
-		const positive = variant === 'polarized' ? `<path ${paint} d="M -17 -12 H -9 M -13 -16 V -8" />` : '';
-		return `<path ${paint} d="M -42 0 H -7 M -7 -18 V 18 ${rightPlate} M 7 0 H 42" />${variable}${positive}`;
-	}
-	const base = `<path ${paint} d="M -42 0 H -28 C -28 -16 -14 -16 -14 0 C -14 -16 0 -16 0 0 C 0 -16 14 -16 14 0 C 14 -16 28 -16 28 0 H 42" />`;
-	return variant === 'fixed' ? base : `${base}<path ${paint} d="M -28 12 C -28 28 -14 28 -14 12 C -14 28 0 28 0 12 C 0 28 14 28 14 12 C 14 28 28 28 28 12${variant === 'transformer' ? ' M -33 5 H 33 M -33 8 H 33' : ''}" />`;
-}
-
-/** Render the compact variant-driven electrical library. */
-function electricalShape(component: ElectricalComponent, paint: string, nodePaint: string): string {
-	const variant = component.variant ?? '';
-	switch (component.kind) {
-		case 'junction':
-			return `<circle ${nodePaint} cx="0" cy="0" r="4" />`;
-		case 'testpoint':
-			return `<circle ${paint} cx="0" cy="0" r="9" /><circle ${nodePaint} cx="0" cy="0" r="2" />`;
-		case 'connector':
-			return `<path ${paint} d="M -32 0 H -9 M 9 0 H 32" /><circle ${paint} cx="0" cy="0" r="9" />`;
-		case 'source': {
-			if (variant === 'battery') return `<path ${paint} d="M -42 0 H -8 M -8 -16 V 16 M 8 -10 V 10 M 8 0 H 42" />`;
-			const dependent = ['vcvs', 'vccs', 'ccvs', 'cccs'].includes(variant);
-			const body = dependent ? `<path ${paint} d="M -24 0 L 0 -24 24 0 0 24 Z" />` : `<circle ${paint} cx="0" cy="0" r="24" />`;
-			const controls = dependent ? `<path ${paint} d="M 0 -34 V -24 M 0 24 V 34" />` : '';
-			const current = variant.startsWith('current') || variant.endsWith('cs');
-			const glyph = variant.endsWith('ac')
-				? `<path ${paint} d="M -13 0 C -8 -12 -4 -12 0 0 C 4 12 8 12 13 0" />`
-				: variant === 'voltage-pulse'
-					? `<path ${paint} d="M -14 8 H -7 V -8 H 7 V 8 H 14" />`
-					: current ? `<path ${paint} d="M 0 12 V -12 M -6 -5 L 0 -12 6 -5" />` : `<path ${paint} d="M -7 -8 H 7 M 0 -15 V -1 M -7 9 H 7" />`;
-			return `<path ${paint} d="M -42 0 H -24 M 24 0 H 42" />${body}${controls}${glyph}`;
-		}
-		case 'power':
-			return `<path ${paint} d="M -32 0 H 0 M 0 -13 V 13 M 0 -13 L 15 0 0 13" />`;
-		case 'switch': {
-			const relay = variant === 'relay' ? `<path ${paint} d="M -12 34 C -12 18 12 18 12 34 M 0 19 V 8" />` : '';
-			const throw2 = variant === 'spdt' ? `<path ${paint} d="M 26 12 H 42" />` : '';
-			return `<path ${paint} d="M -42 0 H -24 M -24 0 L 22 -12 M 26 -12 H 42" />${throw2}${relay}`;
-		}
-		case 'protection':
-			return variant === 'breaker'
-				? `<path ${paint} d="M -42 0 H -18 M -18 0 L 18 -12 M 18 0 H 42" />`
-				: `<path ${paint} d="M -42 0 H -24 M 24 0 H 42" /><rect ${paint} x="-24" y="-9" width="48" height="18" rx="4" />`;
-		case 'amplifier':
-			return `<path ${paint} d="M -48 -13 H -30 M -48 13 H -30 M -30 -30 L 30 0 -30 30 Z M 30 0 H 48 M 0 -36 V -15 M 0 15 V 36 M -25 -17 H -17 M -21 -21 V -13 M -25 13 H -17" />`;
-		case 'resonator':
-			return `<path ${paint} d="M -42 0 H -12 M -12 -18 V 18 M 12 -18 V 18 M 12 0 H 42" /><rect ${paint} x="-7" y="-14" width="14" height="28" />`;
-		case 'meter':
-		case 'load':
-			return `<path ${paint} d="M -42 0 H -24 M 24 0 H 42" /><circle ${paint} cx="0" cy="0" r="24" />${variant === 'lamp' ? `<path ${paint} d="M -15 -15 L 15 15 M 15 -15 L -15 15" />` : variant === 'speaker' ? `<path ${paint} d="M -12 -9 H -3 L 8 -19 V 19 L -3 9 H -12 Z M 13 -10 Q 22 0 13 10" />` : variant === 'buzzer' ? `<path ${paint} d="M -12 -9 H -3 L 8 -18 V 18 L -3 9 H -12 Z M 13 -8 L 20 -14 M 15 0 H 24 M 13 8 L 20 14" />` : ''}`;
-	}
-}
-
-/** Render one shared configurable digital-block body and its terminal stubs. */
-function digitalShape(component: DigitalComponent, paint: string): string {
-	if (component.kind === 'buffer') {
-		const bubble = component.variant === 'tristate-inverter' || component.variant === 'schmitt-inverter';
-		return `<path ${paint} d="M -44 0 H -28 M -28 -22 L 24 0 -28 22 Z M ${bubble ? 32 : 24} 0 H 44${component.variant?.startsWith('schmitt') === true ? ' M -17 -8 H -6 V 8 H 5' : ''}" />${bubble ? `<circle ${paint} cx="28" cy="0" r="4" />` : ''}${component.variant?.startsWith('tristate') === true ? `<path ${paint} d="M 0 34 V 12" />` : ''}`;
-	}
-	const left = -component.bodyWidth / 2;
-	const right = -left;
-	const top = -component.bodyHeight / 2;
-	const stubs = `${Array.from({ length: component.inputs }, (_, index) => `<path ${paint} d="M ${svgNumber(left - 16)} ${svgNumber(distributedCoordinate(index, Math.max(1, component.inputs), component.bodyHeight))} H ${svgNumber(left)}" />`).join('')}${Array.from({ length: component.outputs }, (_, index) => `<path ${paint} d="M ${svgNumber(right)} ${svgNumber(distributedCoordinate(index, component.outputs, component.bodyHeight))} H ${svgNumber(right + 16)}" />`).join('')}`;
-	return `<rect ${paint} x="${svgNumber(left)}" y="${svgNumber(top)}" width="${component.bodyWidth}" height="${component.bodyHeight}" rx="3" />${stubs}`;
-}
-
-/** Render non-unitary and track-aware quantum structures without bespoke gate copies. */
-function quantumSpecialShape(component: QuantumSpecialComponent, paint: string, nodePaint: string): string {
-	if (component.kind === 'measure') return `<path ${paint} d="M -40 0 H -22 M 22 0 H 40 M 0 22 V 34" /><rect ${paint} x="-22" y="-22" width="44" height="44" rx="3" /><path ${paint} d="M -12 8 A 15 15 0 0 1 12 8 M 0 8 L 11 -9" />`;
-	if (component.kind === 'prepare') return `<path ${paint} d="M 0 0 H 40 M -10 -10 L 10 0 -10 10 Z" />`;
-	if (component.kind === 'reset') return `<path ${paint} d="M -40 0 H -18 M 18 0 H 40" /><rect ${paint} x="-18" y="-18" width="36" height="36" rx="3" /><path ${paint} d="M 9 -8 A 12 12 0 1 0 10 7 M 9 -8 H 1 M 9 -8 V 0" />`;
-	if (component.kind === 'control') return `<path ${paint} d="M -42 0 H 42" />${component.controlType === 'negative' ? `<circle ${paint} cx="0" cy="0" r="5" />` : `<circle ${nodePaint} cx="0" cy="0" r="5" />`}`;
-	if (component.kind === 'classical-bit' || component.kind === 'classical-register') return `<path ${paint} d="M -40 -2 H 40 M -40 2 H 40" />`;
-	const tracks = Math.max(component.wires, component.controls + component.targets);
-	const span = quantumTrackSpan(tracks);
-	const lines = Array.from({ length: tracks }, (_, index) => `<path ${paint} d="M -42 ${svgNumber(quantumTrackCoordinate(index, tracks))} H 42" />`).join('');
-	if (component.kind === 'barrier') return `${lines}<path ${paint} stroke-dasharray="4 3" d="M 0 ${svgNumber(-span / 2 - 8)} V ${svgNumber(span / 2 + 8)}" />`;
-	if (component.kind === 'delay') return `${lines}<rect ${paint} x="-12" y="${svgNumber(-span / 2 - 7)}" width="24" height="${svgNumber(span + 14)}" rx="2" />`;
-	const marks = Array.from({ length: tracks }, (_, index) => {
-		const y = quantumTrackCoordinate(index, tracks);
-		if (component.kind === 'swap') return `<path ${paint} d="M -6 ${svgNumber(y - 6)} L 6 ${svgNumber(y + 6)} M 6 ${svgNumber(y - 6)} L -6 ${svgNumber(y + 6)}" />`;
-		if (component.kind === 'cz') return `<circle ${nodePaint} cx="0" cy="${svgNumber(y)}" r="4" />`;
-		if (index < component.controls) {
-			if (component.controlType === 'negative') return `<circle ${paint} cx="0" cy="${svgNumber(y)}" r="5" />`;
-			if (component.controlType === 'classical') return `<rect ${nodePaint} x="-5" y="${svgNumber(y - 5)}" width="10" height="10" />`;
-			return `<circle ${nodePaint} cx="0" cy="${svgNumber(y)}" r="4" />`;
-		}
-		if (component.kind === 'controlled' || component.kind === 'cphase') return `<rect ${paint} x="-10" y="${svgNumber(y - 10)}" width="20" height="20" rx="2" />`;
-		return `<circle ${paint} cx="0" cy="${svgNumber(y)}" r="10" /><path ${paint} d="M -7 ${svgNumber(y)} H 7 M 0 ${svgNumber(y - 7)} V ${svgNumber(y + 7)}" />`;
-	}).join('');
-	return `${lines}<path ${paint} d="M 0 ${svgNumber(-span / 2)} V ${svgNumber(span / 2)}" />${marks}`;
-}
-
-/** Render orientation-independent glyphs after vector rotation so text remains upright. */
-function componentInnerText(component: SchematicComponent): string {
-	if (isQuantumGate(component) && component.kind !== 'cnot') {
-		return `<g ${colorAttributes(component.color)}>${quantumText(component)}</g>`;
-	}
-	if (isDigitalComponent(component)) {
-		const labels: Readonly<Record<DigitalComponent['kind'], string>> = {
-			buffer: '', logic: component.variant === 'high' ? '1' : component.variant === 'low' ? '0' : component.variant === 'high-z' ? 'Z' : 'X',
-			clock: 'CLK', flipflop: String(component.variant).toUpperCase(), mux: component.variant === 'demux' ? 'DEMUX' : 'MUX',
-			encoder: 'ENC', decoder: 'DEC', register: 'REG', counter: 'CTR', adder: component.variant === 'full' ? 'FA' : 'HA', comparator: 'CMP', bus: String(component.variant).toUpperCase()
-		};
-		const value = labels[component.kind];
-		return value === '' ? '' : `<text ${colorAttributes(component.color, 'schematic-gate-symbol')} stroke="none" x="0" y="4" text-anchor="middle" font-size="11">${value}</text>`;
-	}
-	if ((component.kind === 'meter' || component.kind === 'load') && component.variant !== 'lamp' && component.variant !== 'speaker' && component.variant !== 'buzzer') {
-		const value = component.variant === 'voltmeter' ? 'V' : component.variant === 'ammeter' ? 'A' : 'M';
-		return `<text ${colorAttributes(component.color, 'schematic-gate-symbol')} stroke="none" x="0" y="5" text-anchor="middle" font-size="14">${value}</text>`;
-	}
-	if (isQuantumSpecial(component) && component.kind === 'controlled' && component.operator !== undefined) {
-		return `<text ${colorAttributes(component.color, 'schematic-gate-symbol')} stroke="none" x="0" y="4" text-anchor="middle" font-size="11">${renderMathLabelTspans(component.operator)}</text>`;
-	}
-	return '';
-}
-
-/**
- * Render the local-coordinate physical vectors for any component kind.
- *
- * @param component - Validated component AST node.
- * @param paint - Optional line-paint attributes; defaults to the component color.
- * @param nodePaint - Optional solid-node attributes for filled markers.
- * @returns Kind-specific SVG fragment without outer positioning markup.
- */
+/** Vectors for any kind, from its registry entry. */
 function componentShape(
 	component: SchematicComponent,
 	paint = colorAttributes(component.color),
 	nodePaint = colorAttributes(component.color, 'schematic-node-fill')
 ): string {
-	if (isClassicalGate(component)) {
-		return component.standard === 'iec' ? iecGate(component, paint) : ieeeGate(component, paint);
-	}
-	if (isDigitalComponent(component)) return digitalShape(component, paint);
-	if (isQuantumSpecial(component)) return quantumSpecialShape(component, paint, nodePaint);
-	if (isUmlComponent(component)) return umlComponentShape(component, paint, nodePaint);
-	switch (component.kind) {
-		case 'resistor':
-		case 'capacitor':
-		case 'inductor':
-			return passiveShape(component, paint);
-		case 'diode':
-			return diodeShape(component, paint);
-		case 'transistor':
-			return transistorShape(component, paint);
-		case 'port':
-			return `<path ${paint} d="M -42 0 H -24 M 24 0 H 42 M -24 -16 H 14 L 24 0 L 14 16 H -24 Z" />`;
-		case 'ground':
-			return groundShape(component, paint);
-		case 'hadamard':
-		case 'qgate':
-		case 'xgate':
-		case 'ygate':
-		case 'zgate':
-		case 'sgate':
-		case 'sdg':
-		case 'tgate':
-		case 'tdg':
-		case 'sx':
-		case 'phase':
-		case 'rx':
-		case 'ry':
-		case 'rz':
-		case 'ugate':
-			return quantumGateShell(component, paint);
-		case 'cnot':
-			return `<path ${paint} d="M -42 -9 H 42 M -42 9 H 42 M 0 -9 V 9 M -7 9 H 7 M 0 2 V 16" /><circle ${nodePaint} cx="0" cy="-9" r="4" /><circle ${paint} cx="0" cy="9" r="10" />`;
-		case 'ic':
-			return integratedCircuitShape(component, paint);
-		case 'source':
-		case 'junction':
-		case 'testpoint':
-		case 'connector':
-		case 'power':
-		case 'switch':
-		case 'protection':
-		case 'amplifier':
-		case 'resonator':
-		case 'meter':
-		case 'load':
-			return electricalShape(component, paint, nodePaint);
-	}
+	return definition(component).draw(component, paint, nodePaint);
 }
 
-/**
- * Derive a reusable symbol key for geometry independent of instance text/counts.
- *
- * @param component - Component candidate.
- * @returns Stable symbol key, or `undefined` when geometry is instance-specific.
- */
+/** Upright glyphs drawn after the rotated vectors. */
+function componentInnerText(component: SchematicComponent): string {
+	return definition(component).inner?.(component) ?? '';
+}
+
+/** Key under which identical geometry is shared through `<use>`. */
 function reusableSymbolKey(component: SchematicComponent): string | undefined {
-	if (
-		isClassicalGate(component) ||
-		isUmlComponent(component) ||
-		component.kind === 'ic'
-	) {
-		return undefined;
-	}
-	if (isQuantumGate(component) && component.kind !== 'cnot') {
-		const dimensions = quantumGateDimensions(component);
-		return `quantum-shell-${dimensions.bodyWidth}-${dimensions.bodyHeight}`;
-	}
-	if (isDigitalComponent(component)) return `digital-${component.kind}-${component.variant ?? ''}-${component.inputs}-${component.outputs}-${component.bodyWidth}-${component.bodyHeight}`;
-	if (isQuantumSpecial(component)) return `quantum-${component.kind}-${component.controlType ?? ''}-${component.controls}-${component.targets}-${component.wires}`;
-	if (component.kind === 'diode') return `diode-${component.diodeType}`;
-	if (component.kind === 'transistor') return `transistor-${component.transistorType}`;
-	if (component.kind === 'ground') return `ground-${component.groundStyle}`;
-	if (component.kind === 'resistor' || component.kind === 'capacitor' || component.kind === 'inductor') return component.passiveType === undefined ? component.kind : `${component.kind}-${component.passiveType}`;
-	if (
-		component.kind === 'source' || component.kind === 'junction' || component.kind === 'testpoint' ||
-		component.kind === 'connector' || component.kind === 'power' || component.kind === 'switch' ||
-		component.kind === 'protection' || component.kind === 'amplifier' || component.kind === 'resonator' ||
-		component.kind === 'meter' || component.kind === 'load'
-	) return `${component.kind}-${component.variant ?? ''}`;
-	return component.kind;
+	const symbol = definition(component).symbol;
+	return symbol === undefined ? undefined : symbol(component);
 }
 
-/**
- * Serialize one reusable local-coordinate symbol definition.
- *
- * @param component - Representative component for the symbol geometry.
- * @param symbolId - Namespaced, compiler-sanitized definition ID.
- * @returns SVG group suitable inside `<defs>`.
- */
+/** One reusable symbol definition. */
 function reusableSymbolDefinition(component: SchematicComponent, symbolId: string): string {
 	const vectorPaint =
 		'class="schematic-token" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--schematic-vector,currentColor)"';
@@ -1340,8 +565,9 @@ function componentMetadata(component: SchematicComponent): string {
 			component.width > 1 ? `${component.width} bit` : undefined
 		].filter(Boolean).join(', ');
 	}
-	if (isQuantumGate(component)) {
-		return [component.parameter, component.phase, component.matrix].filter(Boolean).join(', ');
+	if ((QUANTUM_GATE_KINDS as readonly string[]).includes(component.kind)) {
+		const gate = component as QuantumGateComponent;
+		return [gate.parameter, gate.phase, gate.matrix].filter(Boolean).join(', ');
 	}
 	switch (component.kind) {
 		case 'resistor':
@@ -1377,13 +603,13 @@ function componentMetadata(component: SchematicComponent): string {
  * @returns Full-mode circle markup with delegated-event data attributes.
  */
 function componentPortMarkup(component: SchematicComponent): string {
-	return enumerateComponentPorts(component)
+	const x0 = toMilli(component.x);
+	const y0 = toMilli(component.y);
+	return placedPorts(component)
 		.map((port) => {
-			const x = svgNumber(port.point.x - component.x);
-			const y = svgNumber(port.point.y - component.y);
 			const portId = escapeXml(port.id);
 			const parentId = escapeXml(component.id);
-			return `<circle ${colorAttributes(component.color, 'schematic-port-hotspot')} cx="${x}" cy="${y}" r="${PORT_HOTSPOT_RADIUS}" fill="transparent" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="all" data-port-id="${portId}" data-parent-node="${parentId}" tabindex="0" role="button" aria-label="${parentId} port ${portId}" />`;
+			return `<circle ${colorAttributes(component.color, 'schematic-port-hotspot')} cx="${fmt(port.point.x - x0)}" cy="${fmt(port.point.y - y0)}" r="${PORT_HOTSPOT_RADIUS}" fill="transparent" stroke="transparent" stroke-width="8" vector-effect="non-scaling-stroke" pointer-events="all" data-port-id="${portId}" data-parent-node="${parentId}" tabindex="0" role="button" aria-label="${parentId} port ${portId}" />`;
 		})
 		.join('');
 }

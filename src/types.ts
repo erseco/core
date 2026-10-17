@@ -756,16 +756,62 @@ export interface CompileSchematicOptions extends SchematicFence {
 export class SchematicSyntaxError extends Error {
 	/** One-based source line when the failure maps to a DSL declaration. */
 	readonly line: number | undefined;
+	/** One-based column where the offending text starts, when known. */
+	readonly column: number | undefined;
+	/** One-based column just past the offending text, when known. */
+	readonly endColumn: number | undefined;
+	/** Stable diagnostic family, such as `syntax`, `option`, `reference` or `routing`. */
+	readonly code: SchematicDiagnosticCode;
 
 	/**
 	 * Create a compiler diagnostic.
 	 *
 	 * @param message - Human-readable failure without a line prefix.
 	 * @param line - Optional one-based source line.
+	 * @param span - Optional one-based column range on that line.
+	 * @param code - Diagnostic family; defaults to `syntax`.
 	 */
-	constructor(message: string, line?: number) {
+	constructor(
+		message: string,
+		line?: number,
+		span?: { readonly column: number; readonly endColumn: number },
+		code: SchematicDiagnosticCode = 'syntax'
+	) {
 		super(line === undefined ? message : `Line ${line}: ${message}`);
 		this.name = 'SchematicSyntaxError';
 		this.line = line;
+		this.column = span?.column;
+		this.endColumn = span?.endColumn;
+		this.code = code;
 	}
+}
+
+/** Diagnostic families, one per compiler phase. */
+export const SCHEMATIC_DIAGNOSTIC_CODES = [
+	'syntax',
+	'option',
+	'limit',
+	'reference',
+	'topology',
+	'placement',
+	'geometry',
+	'routing'
+] as const;
+/** The phase a diagnostic comes from. */
+export type SchematicDiagnosticCode = (typeof SCHEMATIC_DIAGNOSTIC_CODES)[number];
+
+/** One problem found in a document, with where it is. */
+export interface SchematicSourceDiagnostic {
+	/** Phase family the problem belongs to. */
+	readonly code: SchematicDiagnosticCode;
+	/** Human-readable explanation without the `Line N:` prefix. */
+	readonly message: string;
+	/** One-based line, when the problem maps to a declaration. */
+	readonly line?: number;
+	/** One-based start column on that line, when known. */
+	readonly column?: number;
+	/** One-based column just past the problem, when known. */
+	readonly endColumn?: number;
+	/** Every diagnostic the compiler reports is an error. */
+	readonly severity: 'error';
 }
