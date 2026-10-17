@@ -243,18 +243,25 @@ function uniqueSorted(values: number[]): Float64Array {
 	return Float64Array.from(out);
 }
 
-/** Lattice coordinates on one axis within [low, high]: pitch multiples away from the specials, plus the specials. */
+/**
+ * Lattice coordinates on one axis within [low, high]: pitch multiples at least
+ * half a pitch from every special, plus the specials. Both runs are already in
+ * order, so they are merged rather than sorted.
+ */
 function axisCoordinates(specials: Float64Array, low: number, high: number): Float64Array {
-	const values: number[] = [];
-	const first = lowerBound(specials, low);
-	for (let index = first; index < specials.length && specials[index]! <= high; index += 1) values.push(specials[index]!);
+	const out: number[] = [];
 	const half = PITCH / 2;
-	for (let value = Math.ceil(low / PITCH) * PITCH; value <= high; value += PITCH) {
-		const near = lowerBound(specials, value - half + 1);
+	let special = lowerBound(specials, low);
+	let near = 0;
+	for (let value = Math.ceil(low / PITCH) * PITCH; ; value += PITCH) {
+		const multiple = value <= high;
+		/* Every special in the window that comes before this multiple. */
+		while (special < specials.length && specials[special]! <= high && (!multiple || specials[special]! < value)) out.push(specials[special++]!);
+		if (!multiple) return Float64Array.from(out);
+		while (near < specials.length && specials[near]! <= value - half) near += 1;
 		if (near < specials.length && specials[near]! < value + half) continue;
-		values.push(value);
+		out.push(value);
 	}
-	return uniqueSorted(values);
 }
 
 /* Node flags for one search window. */
