@@ -177,6 +177,11 @@ describe('placement', () => {
 		expect(diagnostics.every((diagnostic) => diagnostic.code === 'placement')).toBe(true);
 	});
 
+	test('a declaration stuck behind a cycle reports the cycle once, for every member', () => {
+		const diagnostics = diagnoseSchematic(doc('port:G "g" right-of H #blue', 'port:H "h" right-of I #blue', 'port:I "i" right-of H #blue'), fence);
+		expect(diagnostics.map(({ line, message }) => [line, message.split('.')[0]])).toEqual([[1, 'Placement cycle: H -> I -> H']]);
+	});
+
 	test('a chain past the depth budget is reported, and what hangs from it is not', () => {
 		const diagnostics = diagnoseSchematic(
 			doc('resistor:R1 "a" at (100, 100) #amber', 'resistor:R2 "b" below R1 #amber', 'resistor:R3 "c" below R2 #amber', 'resistor:R4 "d" right-of R3 #amber'),

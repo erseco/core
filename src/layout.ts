@@ -9,7 +9,7 @@
  *
  * @packageDocumentation
  */
-import { fmt, fromMilli, inflate, overlaps, contains, roundDiv, segmentContact, toMilli, type IPoint, type IRect } from './geom.js';
+import { append, fmt, fromMilli, inflate, overlaps, contains, roundDiv, segmentContact, toMilli, type IPoint, type IRect } from './geom.js';
 import { mathLabelTextWidthAt } from './math-label.js';
 import { resolveSchematicLimits, SCHEMATIC_LIMITS } from './limits.js';
 import { Buckets, compact, MAX_ROUTER_STATES, routeWires, type RouterFixed, type RouterObstacle, type RouterWire } from './route.js';
@@ -63,6 +63,12 @@ export interface RoutedConnection {
 	points: readonly [SchematicPoint, SchematicPoint, ...SchematicPoint[]];
 	/** Where a branch leaves its net's copper, when that is the trace's first point. */
 	readonly junction?: SchematicPoint;
+	/**
+	 * Where this trace crosses another trace of its own net away from a junction.
+	 * They are one node, so each is drawn as a junction dot rather than read as
+	 * two wires passing.
+	 */
+	readonly joins?: readonly SchematicPoint[];
 }
 
 /** Relative text anchors for a component's designator and label rows. */
@@ -591,14 +597,19 @@ export function routeSchematicConnections(
 	/* A free pin is a point no wire may pass through: one that did would read as
 	   joined to it. Text-like, so it adds no lattice lines of its own. */
 	const wired = new Set(connections.flatMap((connection) => [`${connection.from.componentId}.${connection.from.port}`, `${connection.to.componentId}.${connection.to.port}`]));
+	const freePins = new Buckets<{ owner: string; name: string; point: IPoint }>();
 	for (const [index, component] of list.entries()) {
 		for (const port of placedPorts(component)) {
 			if (wired.has(`${component.id}.${port.id}`)) continue;
-			obstacles.push({ owner: index, kind: 'label', rect: inflate({ minX: port.point.x, minY: port.point.y, maxX: port.point.x, maxY: port.point.y }, 1) });
+			const rect = inflate({ minX: port.point.x, minY: port.point.y, maxX: port.point.x, maxY: port.point.y }, 1);
+			obstacles.push({ owner: index, kind: 'label', rect });
+			freePins.add({ owner: component.id, name: `${component.id}.${port.id}`, point: port.point }, rect);
 		}
 	}
 	const occupied = new Buckets<{ owner: string; rect: IRect }>();
 	for (const entry of manual) occupied.add(entry, entry.rect);
+	const solid = new Buckets<{ owner: string; rect: IRect }>();
+	for (const entry of bodies) solid.add(entry, entry.rect);
 	const identity = contactIdentities(connections);
 	const netTerminals = new Map<number, Set<string>>();
 	for (const [index, connection] of connections.entries()) {
@@ -770,6 +781,43 @@ export function routeSchematicConnections(
 		}
 		active.push(stub);
 	}
+	/* In source order, so the first problem reported is the first written. */
+	for (const stub of [...stubs].sort((left, right) => left.index - right.index)) {
+		/* A lead that runs into another component's free pin would read as wired
+		   to it, and the router cannot move a lead. */
+		const owner = stub.name.slice(0, stub.name.indexOf('.'));
+		/* Nor can it be moved out of a body it runs through: two parts placed so
+		   close that one's pin leaves into the other. The body at the far end of
+		   the same connection is two facing pins, joined straight. */
+		const connection = connections[stub.index]!;
+		const ends = [endpoint(connection.from.componentId, connection.from.port), endpoint(connection.to.componentId, connection.to.port)] as const;
+		/* Two pins facing each other along one line, normals pointing at each other. */
+		const facing =
+			(ends[0].point.x === ends[1].point.x || ends[0].point.y === ends[1].point.y) &&
+			Math.sign(ends[1].point.x - ends[0].point.x) === ends[0].normal.x &&
+			Math.sign(ends[1].point.y - ends[0].point.y) === ends[0].normal.y &&
+			ends[1].normal.x === -ends[0].normal.x &&
+			ends[1].normal.y === -ends[0].normal.y;
+		const span = { minX: stub.minX, maxX: stub.maxX, minY: Math.min(stub.a.y, stub.b.y), maxY: Math.max(stub.a.y, stub.b.y) };
+		for (const body of solid.query(span)) {
+			if (body.owner === owner || (facing && (body.owner === connection.from.componentId || body.owner === connection.to.componentId)) || !segmentEntersRect(stub.a, stub.b, body.rect)) continue;
+			throw new SchematicSyntaxError(
+				`${stub.name} sits against ${body.owner}: the wire leaving it would run straight through ${body.owner}. Move one of them away.`,
+				connection.line,
+				undefined,
+				'routing'
+			);
+		}
+		for (const free of freePins.query(span)) {
+			if (free.owner === owner || segmentContact(stub.a, stub.b, free.point, free.point) === undefined) continue;
+			throw new SchematicSyntaxError(
+				`${stub.name} sits against ${free.name}, which nothing is wired to: the wire leaving ${stub.name} would read as joined to it. Move one of them away, or wire ${free.name}.`,
+				connection.line,
+				undefined,
+				'routing'
+			);
+		}
+	}
 	const wires: RouterWire[] = orthogonal.map((index) => {
 		const connection = connections[index]!;
 		const signal = connection.relation === 'signal';
@@ -805,6 +853,35 @@ export function routeSchematicConnections(
 		checkMarkers(connections[index]!, points[index]!, bodies);
 	}
 
+	/* A trace crossing its own net is one node with it: the later trace of the
+	   two carries a dot there. */
+	const joins = new Map<number, IPoint[]>();
+	const seen = new Set<string>();
+	const byNet = new Map<number, number[]>();
+	for (const index of orthogonal) append(byNet, identity[index]!, index);
+	for (const index of orthogonal) {
+		const route = points[index]!;
+		for (let step = 1; step < route.length; step += 1) {
+			const a = route[step - 1]!;
+			const b = route[step]!;
+			if (a.x !== b.x) continue;
+			for (const other of byNet.get(identity[index]!)!) {
+				if (other === index) continue;
+				const peer = points[other]!;
+				for (let k = 1; k < peer.length; k += 1) {
+					const c = peer[k - 1]!;
+					const d = peer[k]!;
+					if (c.y !== d.y) continue;
+					const inside = Math.min(c.x, d.x) < a.x && a.x < Math.max(c.x, d.x) && Math.min(a.y, b.y) < c.y && c.y < Math.max(a.y, b.y);
+					const key = `${a.x},${c.y}`;
+					if (!inside || seen.has(key)) continue;
+					seen.add(key);
+					append(joins, Math.max(index, other), { x: a.x, y: c.y });
+				}
+			}
+		}
+	}
+
 	/* Crossings: a vertical run crossing another net's horizontal run gets the arc. */
 	const horizontals: { index: number; y: number; low: number; high: number }[] = [];
 	for (const index of orthogonal) {
@@ -826,6 +903,13 @@ export function routeSchematicConnections(
 		}
 	}
 	const radius = SCHEMATIC_BRIDGE_RADIUS * 1000;
+	/* Where each net's traces end, by column: a bridge on that net stops short. */
+	const ends = new Map<number, Map<number, number[]>>();
+	for (const index of orthogonal) {
+		const columns = ends.get(identity[index]!) ?? new Map<number, number[]>();
+		ends.set(identity[index]!, columns);
+		for (const end of [points[index]![0]!, points[index]!.at(-1)!]) append(columns, end.x, end.y);
+	}
 	let crossingCount = 0;
 	for (const index of orthogonal) {
 		const route = points[index]!;
@@ -846,19 +930,23 @@ export function routeSchematicConnections(
 			for (let cursor = first; cursor < horizontals.length && horizontals[cursor]!.y < high; cursor += 1) {
 				const run = horizontals[cursor]!;
 				if (identity[run.index] === identity[index] || !(run.low < a.x && a.x < run.high)) continue;
+				/* Copper drawn twice on one row — a repeated connection — is one crossing. */
+				if (crossings.get(step - 1)?.includes(run.y) === true) continue;
 				crossingCount += 1;
 				if (crossingCount > wireCrossings) {
 					throw new SchematicSyntaxError(`Wire crossing complexity exceeds ${wireCrossings.toLocaleString('en-US')} intersections.`, connections[index]!.line, undefined, 'routing');
 				}
-				const list = crossings.get(step - 1) ?? [];
-				list.push(run.y);
-				crossings.set(step - 1, list);
+				append(crossings, step - 1, run.y);
 			}
 		}
 		/* An arc bulges toward -x; it may use at most half the gap to another
-		   net's vertical wire beside it. */
+		   net's vertical wire beside it, and must stop short of any point where
+		   its own net joins this run, or the junction's dot would sit on a gap. */
+		const touches = ends.get(identity[index]!)!;
 		const room = (x: number, y: number): number => {
 			let limit = radius;
+			/* Whole units short of the joining point, so the arc stays a round number. */
+			for (const ty of touches.get(x) ?? []) if (Math.abs(ty - y) <= radius) limit = Math.min(limit, Math.floor((Math.abs(ty - y) - 1) / 1000) * 1000);
 			for (const run of verticals) {
 				if (identity[run.index] === identity[index] || run.x >= x || run.x <= x - 2 * radius) continue;
 				if (run.low < y + radius && run.high > y - radius) limit = Math.min(limit, Math.floor((x - run.x) / 2));
@@ -867,11 +955,13 @@ export function routeSchematicConnections(
 		};
 		const { d, extrema } = orthogonalPathData(route, crossings, room, connections[index]!.line);
 		const junction = junctions.get(index);
+		const dots = joins.get(index);
 		routes[index] = {
 			curve: 'ortho',
 			d,
 			points: extrema.map(unitPoint) as unknown as [SchematicPoint, SchematicPoint, ...SchematicPoint[]],
-			...(junction === undefined ? {} : { junction: unitPoint(junction) })
+			...(junction === undefined ? {} : { junction: unitPoint(junction) }),
+			...(dots === undefined ? {} : { joins: dots.map(unitPoint) })
 		};
 	}
 

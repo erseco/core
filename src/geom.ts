@@ -86,6 +86,13 @@ export function fmt(value: number): string {
 /** Clockwise quarter turns: 0 right, 1 down, 2 left, 3 up. */
 export type Turn = 0 | 1 | 2 | 3;
 
+/** Append to the list a key holds, starting one when there is none. */
+export function append<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+	const list = map.get(key);
+	if (list === undefined) map.set(key, [value]);
+	else list.push(value);
+}
+
 /** Rotate a local point clockwise by `turn` quarter turns, exactly. */
 export function rotate(point: IPoint, turn: Turn): IPoint {
 	switch (turn) {

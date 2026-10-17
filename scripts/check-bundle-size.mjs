@@ -77,8 +77,20 @@ const BUDGETS = [
 		 * than the templates it replaced. The one lever left — moving diagnostic
 		 * prose behind codes, about 2.9 KiB — is not one this project takes.
 		 */
-		maxGzipBytes: 40 * 1024,
-		maxBrotliBytes: 35 * 1024
+		/*
+		 * 42 KiB from 40 before 1.0 shipped, both measured against the build
+		 * before them. 669 B gzip for text measured against Arial's advances
+		 * instead of one cell width — so labels are no longer squeezed by
+		 * `textLength` — and placement that reports every broken relation with
+		 * its columns. 1,141 B for what a seeded property search over random
+		 * layouts found the router drawing wrongly: dots where a wire crosses
+		 * its own net, loops drawn along the tree, other nets' leads treated as
+		 * contact, leads checked against bodies and free pins with diagnostics
+		 * that name both parts, one bridge where a connection is written twice,
+		 * and bridges that stop short of a junction.
+		 */
+		maxGzipBytes: 42 * 1024,
+		maxBrotliBytes: 36.5 * 1024
 	},
 	{
 		label: 'Package bundle (every public export)',
@@ -87,9 +99,10 @@ const BUDGETS = [
 		/* 37 KiB from 35 in 0.5, for the same two features plus their exported types. */
 		/* 39 KiB from 37 in 0.8: the 116 B left over could not hold trunks, and
 		   the decompiler reads them back too. 41 KiB from 39 in 0.8, for sub-circuits. */
-		/* 43 KiB from 41 in 1.0, for the same machinery plus `diagnoseSchematic`. */
-		maxGzipBytes: 43 * 1024,
-		maxBrotliBytes: 38 * 1024
+		/* 43 KiB from 41 in 1.0, for the same machinery plus `diagnoseSchematic`;
+		   45 KiB for the measured text and layout fixes above. */
+		maxGzipBytes: 45 * 1024,
+		maxBrotliBytes: 39 * 1024
 	}
 ];
 

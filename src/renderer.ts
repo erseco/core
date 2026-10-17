@@ -358,10 +358,9 @@ function connectionMarkup(
 		relation === 'signal' && connection.markerEnd === 'none'
 			? `<circle ${colorAttributes(connection.color, 'schematic-node-fill')} cx="${svgNumber(end.x)}" cy="${svgNumber(end.y)}" r="3" />`
 			: '';
-	const junction =
-		routed.junction === undefined
-			? ''
-			: `<circle ${colorAttributes(connection.color, 'schematic-node-fill schematic-junction')} cx="${svgNumber(routed.junction.x)}" cy="${svgNumber(routed.junction.y)}" r="3" />`;
+	const junction = [...(routed.junction === undefined ? [] : [routed.junction]), ...(routed.joins ?? [])]
+		.map((point) => `<circle ${colorAttributes(connection.color, 'schematic-node-fill schematic-junction')} cx="${svgNumber(point.x)}" cy="${svgNumber(point.y)}" r="3" />`)
+		.join('');
 	return `<g class="schematic-wire${signalClass}"${dataAttributes}${accessibility}>${markerCarrier}<path${vectorId} ${colorAttributes(connection.color, `schematic-trace${signalClass}`)} d="${visibleConnectionPath(connection, routed)}"${markerAttributes} />${glow}${endpoint}${junction}${connectionLabelMarkup(connection, routed)}</g>`;
 }
 
@@ -522,10 +521,8 @@ function compactConnectionMarkup(
 			);
 		}
 		/* A junction is the same dot as an endpoint, so it compounds with them. */
-		if (routed.junction !== undefined) {
-			batch.endpoints.push(
-				`M ${svgNumber(routed.junction.x - 3)} ${svgNumber(routed.junction.y)} a 3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0`
-			);
+		for (const point of [...(routed.junction === undefined ? [] : [routed.junction]), ...(routed.joins ?? [])]) {
+			batch.endpoints.push(`M ${svgNumber(point.x - 3)} ${svgNumber(point.y)} a 3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0`);
 		}
 		const label = connectionLabelMarkup(connection, routed);
 		if (label !== '') batch.labels.push(label);

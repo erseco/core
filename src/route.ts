@@ -32,7 +32,7 @@
  *
  * @module
  */
-import { axisSegmentEntersRect, segmentContact, type IPoint, type IRect } from './geom.js';
+import { append, axisSegmentEntersRect, segmentContact, type IPoint, type IRect } from './geom.js';
 
 /** Channel pitch: the spacing of lattice lines, in milli-units. */
 export const PITCH = 12_000;
@@ -46,6 +46,9 @@ const MAX_AVOIDABLE_CROSSINGS = 2;
 const CONTACT = 2_000_000;
 /** History added at a contested location per iteration. */
 const HISTORY = 1_000_000;
+/** Cost of crossing the searching wire's own net away from a junction: such a
+    crossing reads as two wires that do not connect. */
+const SAME_NET_CROSSING = 20 * BEND;
 /** Lattice margin around a search's bounding box. */
 const WINDOW_MARGIN = 8 * PITCH;
 /** Search-state ceiling for one connection. */
@@ -269,6 +272,8 @@ const OTHER_H = 1;
 const OTHER_V = 2;
 const OTHER_END = 4;
 const OWN = 8;
+/* Copper of the searching wire's own net that is not a place to branch from. */
+const SAME = 16;
 const AVOID = 32;
 
 /** Reusable search scratch, grown to the largest window and never shrunk. */
@@ -528,12 +533,27 @@ class Router {
 		for (const index of singles) {
 			drafts.push({ net: this.#input.wires[index]!.net, wires: [index], tree: false, key: keyOf([index]) });
 		}
+		/* Ties on the key — wires between the same two escape points — are broken
+		   by direction: every wire's ends, from then to, in order. Only units that
+		   are geometrically identical fall back to declaration order, and those
+		   draw the same set of routes whichever goes first. */
+		const signature = new Map(
+			drafts.map((draft) => [
+				draft,
+				draft.wires
+					.map((index) => this.#input.wires[index]!)
+					.map((wire) => `${wire.from.point.x},${wire.from.point.y},${wire.to.point.x},${wire.to.point.y}`)
+					.sort()
+					.join(';')
+			])
+		);
 		drafts.sort(
 			(left, right) =>
 				left.key[0] - right.key[0] ||
 				left.key[1] - right.key[1] ||
 				left.key[2] - right.key[2] ||
 				left.key[3] - right.key[3] ||
+				Number(signature.get(left)! > signature.get(right)!) - Number(signature.get(left)! < signature.get(right)!) ||
 				left.wires[0]! - right.wires[0]!
 		);
 		for (const [index, draft] of drafts.entries()) {
@@ -648,11 +668,17 @@ class Router {
 		}
 		const connected = new Set<string>([pointKey(root!.point)]);
 		const pending = new Set(unit.wires);
+		/* Whether a connection's end already on the tree may become a junction. */
+		const joins = (index: number, fromIn: boolean): boolean => {
+			const wire = this.#input.wires[index]!;
+			return fromIn ? wire.joinFrom : wire.joinTo;
+		};
 		const loops: number[] = [];
 		while (pending.size > 0) {
 			let chosen = -1;
 			let anchor: RouterTerminal | undefined;
 			let free: RouterTerminal | undefined;
+			let forward = false;
 			for (const index of pending) {
 				const wire = this.#input.wires[index]!;
 				const fromIn = connected.has(pointKey(wire.from.point));
@@ -668,11 +694,23 @@ class Router {
 				const order =
 					free === undefined
 						? -1
-						: comparePoints(candidateFree.escape, free.escape) || comparePoints(candidateAnchor.escape, anchor!.escape) || index - chosen;
+						: comparePoints(candidateFree.escape, free.escape) ||
+							comparePoints(candidateAnchor.escape, anchor!.escape) ||
+							comparePoints(candidateFree.point, free.point) ||
+							comparePoints(candidateAnchor.point, anchor!.point) ||
+							/* Between a connection and its reverse, the one drawn from the tree
+							   outward goes first, whichever was written first. */
+							(fromIn ? 0 : 1) - (forward ? 0 : 1) ||
+							/* Then one that may join the tree as a branch, then one without a
+							   label: only connections drawn identically fall back to order. */
+							(joins(index, fromIn) ? 0 : 1) - (joins(chosen, forward) ? 0 : 1) ||
+							(wire.label === undefined ? 0 : 1) - (this.#input.wires[chosen]!.label === undefined ? 0 : 1) ||
+							index - chosen;
 				if (order < 0) {
 					chosen = index;
 					free = candidateFree;
 					anchor = candidateAnchor;
+					forward = fromIn;
 				}
 			}
 			if (chosen < 0) break;
@@ -690,16 +728,66 @@ class Router {
 			this.#commit(chosen, path, branch && freeIsTo, branch && !freeIsTo);
 			connected.add(pointKey(free!.point));
 		}
+		/* A connection both of whose ends the tree already joins adds nothing
+		   electrically: it is drawn along the copper that joins them, so it adds
+		   no ink, no junction and no crossing. */
+		const along = loops.length === 0 ? undefined : this.#copperPaths(unit);
 		for (const index of loops) {
 			const wire = this.#input.wires[index]!;
-			/* Both ends already sit on the tree, whose own copper never blocks a point
-			   search, so a path between them always exists. */
-			const path = this.#search(unit, [wire.from.escape], wire.to.escape, [], index, 'point', undefined, axesOf(wire.from, wire.to));
-			/* v8 ignore next */
+			const path = along!(wire.from.point, wire.to.point);
+			/* v8 ignore next -- both ends were joined by the tree, so a path exists. */
 			if (path === undefined) return index;
-			this.#commit(index, path, false, false);
+			this.#routes[index] = { points: path };
 		}
 		return -1;
+	}
+
+	/**
+	 * A finder for the shortest way along a unit's copper between two points,
+	 * through every junction the copper has; `undefined` where it does not join
+	 * them. The graph is built once for all the unit's redundant connections.
+	 */
+	#copperPaths(unit: Unit): (from: IPoint, to: IPoint) => IPoint[] | undefined {
+		const pieces = this.#unitCopper[unit.index]!;
+		const points = new Map<string, IPoint>();
+		for (const piece of pieces) for (const point of [piece.a, piece.b]) points.set(pointKey(point), point);
+		/* Split every piece at each point lying on it, so T-junctions are nodes. */
+		const edges = new Map<string, { to: string; length: number }[]>();
+		const link = (a: IPoint, b: IPoint) => {
+			const length = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+			for (const [p, q] of [[a, b], [b, a]] as const) append(edges, pointKey(p), { to: pointKey(q), length });
+		};
+		for (const piece of pieces) {
+			const on = [...points.values()].filter((point) => segmentContact(piece.a, piece.b, point, point) !== undefined);
+			on.sort((left, right) => Math.abs(left.x - piece.a.x) + Math.abs(left.y - piece.a.y) - (Math.abs(right.x - piece.a.x) + Math.abs(right.y - piece.a.y)));
+			for (let step = 1; step < on.length; step += 1) link(on[step - 1]!, on[step]!);
+		}
+		/* Dijkstra, ties broken by key so the answer is a function of the copper. */
+		return (from, to) => {
+		const distance = new Map<string, number>([[pointKey(from), 0]]);
+		const previous = new Map<string, string>();
+		const open = new Set([pointKey(from)]);
+		while (open.size > 0) {
+			let current = '';
+			for (const key of open) if (current === '' || distance.get(key)! < distance.get(current)! || (distance.get(key) === distance.get(current) && key < current)) current = key;
+			open.delete(current);
+			if (current === pointKey(to)) {
+				const path: IPoint[] = [];
+				for (let key: string | undefined = current; key !== undefined; key = previous.get(key)) path.unshift(points.get(key)!);
+				return compact(path);
+			}
+			for (const edge of edges.get(current)!) {
+				const next = distance.get(current)! + edge.length;
+				if (next < (distance.get(edge.to) ?? Number.POSITIVE_INFINITY)) {
+					distance.set(edge.to, next);
+					previous.set(edge.to, current);
+					open.add(edge.to);
+				}
+			}
+		}
+		/* v8 ignore next -- callers ask only for points the copper already joins. */
+		return undefined;
+		};
 	}
 
 	/** Every point on a unit's routed copper is a legal place to branch from. */
@@ -906,7 +994,10 @@ class Router {
 		/* Copper of other nets: occupied edges, and how each touched node is used.
 		   In tree mode the unit's own joined copper is marked too, as branch points;
 		   a stub's pin end is never one, so no branch leaves from a pin. */
-		const mark = (piece: Copper, own: boolean, avoidance: boolean): void => {
+		/* Other nets' copper is occupied; the unit's own joined copper is a place to
+		   branch from; the rest of its net may be neither run along nor crossed
+		   freely; and an unjoined stub may not be entered at all. */
+		const mark = (piece: Copper, role: 'other' | 'own' | 'same' | 'avoid'): void => {
 			const horizontal = piece.a.y === piece.b.y;
 			const [along, line, from, to, flag, occupied] = horizontal
 				? [xs, row(piece.a.y), piece.a.x, piece.b.x, OTHER_H, s.occH]
@@ -917,20 +1008,40 @@ class Router {
 			for (let index = lowerBound(along, low); index < along.length && along[index]! <= high; index += 1) {
 				const cell = horizontal ? line * width + index : index * width + line;
 				const at = along[index]!;
-				if (avoidance) s.node[cell] = s.node[cell]! | AVOID;
-				else if (own) {
-					if (!(piece.stub && at === from)) s.node[cell] = s.node[cell]! | OWN;
-				} else s.node[cell] = s.node[cell]! | (at === low || at === high ? OTHER_END : flag);
-				if (at < high && index + 1 < along.length) occupied[cell] = own || avoidance ? 2 : 1;
+				if (role === 'avoid') s.node[cell] = s.node[cell]! | AVOID;
+				/* A pin's lead is no place for a junction: wires meeting there would
+				   crowd the pin's own. */
+				else if (role === 'own' && !piece.stub) s.node[cell] = s.node[cell]! | OWN;
+				else if (role !== 'other') s.node[cell] = s.node[cell]! | SAME;
+				/* Another net's lead is contact along its whole length: a wire crossing
+				   a lead next to its pin would read as wired to it. */
+				else s.node[cell] = s.node[cell]! | (piece.stub || at === low || at === high ? OTHER_END : flag);
+				if (at < high && index + 1 < along.length) occupied[cell] = role === 'other' ? 1 : 2;
 			}
 		};
 		const outside = (rect: IRect): boolean => rect.maxX < window.minX || rect.minX > window.maxX || rect.maxY < window.minY || rect.minY > window.maxY;
 		for (const piece of this.#copperIn(window)) {
 			if (outside(spanOf(piece.a, piece.b))) continue;
-			if (piece.net !== unit.net) mark(piece, false, false);
-			else if (mode === 'tree' && piece.unit === unit.index && (!piece.stub || connected.has(pointKey(piece.a)))) mark(piece, true, false);
+			if (piece.net !== unit.net) mark(piece, 'other');
+			else if (mode === 'tree' && piece.unit === unit.index && (!piece.stub || connected.has(pointKey(piece.a)))) mark(piece, 'own');
+			else mark(piece, 'same');
 		}
-		for (const piece of avoid) mark(piece, false, true);
+		for (const piece of avoid) mark(piece, 'avoid');
+		/* A lead's nodes are never places to branch from, even where a joined wire
+		   ends on them: a junction there would crowd the pin. */
+		if (mode === 'tree') {
+			for (const piece of this.#unitCopper[unit.index]!) {
+				if (!piece.stub) continue;
+				const vertical = piece.a.x === piece.b.x;
+				const [along, line] = vertical ? [ys, col(piece.a.x)] : [xs, row(piece.a.y)];
+				if (line < 0) continue;
+				const [from, to] = vertical ? [piece.a.y, piece.b.y] : [piece.a.x, piece.b.x];
+				for (let index = lowerBound(along, Math.min(from, to)); index < along.length && along[index]! <= Math.max(from, to); index += 1) {
+					const cell = vertical ? index * width + line : line * width + index;
+					s.node[cell] = (s.node[cell]! & ~OWN) | SAME;
+				}
+			}
+		}
 		/* The ends this search joins may only be entered at their escape points:
 		   never along their own stubs, from behind. */
 		for (const piece of this.#unitCopper[unit.index]!) {
@@ -1127,6 +1238,7 @@ class Router {
 				}
 				const nextFlags = s.node[next]!;
 				if ((nextFlags & AVOID) !== 0) continue;
+				if ((nextFlags & (OWN | SAME)) !== 0 && next !== targetCell) cost += SAME_NET_CROSSING;
 				if (next === targetCell) {
 					if ((nextFlags & (OTHER_H | OTHER_V | OTHER_END)) !== 0) penalty += contact;
 					/* Arriving across the pin's axis is a bend at the escape point. */
@@ -1163,9 +1275,7 @@ class Router {
 			const isH = piece.a.y === piece.b.y;
 			const map = isH ? horizontal : vertical;
 			const key = isH ? piece.a.y : piece.a.x;
-			const list = map.get(key);
-			if (list === undefined) map.set(key, [piece]);
-			else list.push(piece);
+			append(map, key, piece);
 		}
 		const flag = (left: Copper, right: Copper, at: IPoint): void => {
 			involved.add(left.unit);

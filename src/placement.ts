@@ -30,7 +30,7 @@
  *
  * @packageDocumentation
  */
-import { fromMilli, parseMilli, toMilli, type IPoint } from './geom.js';
+import { append, fromMilli, parseMilli, toMilli, type IPoint } from './geom.js';
 import { canonicalPortName, componentRectangle, resolvePortPoint } from './layout.js';
 import {
 	SchematicSyntaxError,
@@ -292,11 +292,7 @@ export function resolvePlacements(
 		if (relations === undefined) continue;
 		const unresolvedRefs = new Set(relations.map((relation) => relation.ref).filter((ref) => pendingById.has(ref)));
 		blocking.set(entry.component.id, unresolvedRefs.size);
-		for (const ref of unresolvedRefs) {
-			const list = dependents.get(ref) ?? [];
-			list.push(entry.component.id);
-			dependents.set(ref, list);
-		}
+		for (const ref of unresolvedRefs) append(dependents, ref, entry.component.id);
 	}
 	/* A declaration that failed takes everything placed against it down with it,
 	   silently: the problem has been reported once, where it is. */

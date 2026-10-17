@@ -154,7 +154,7 @@ describe('routing', () => {
 		expect(junctions(result.svg)).toEqual([]);
 	});
 
-	test('a branch that cannot reach its terminal names both ends', () => {
+	test('a terminal walled in by a part its lead runs into is named with that part', () => {
 		/* R3's input is walled in by three blockers; one pass, so the diagnostic
 		   is the branch's own rather than a later retry's. */
 		expect(() =>
@@ -172,7 +172,7 @@ describe('routing', () => {
 				{ bounds: { width: 700, height: 560 }, title: 'walled', limits: { routingAttempts: 1 } }
 			)
 		).toThrow(
-			"Line 8: No orthogonal route from R1.out to R3.in clears every component and earlier trace: move one of them apart, widen the fence bounds, or join the traces that meet with a shared net."
+			"Line 8: R3.in sits against B1: the wire leaving it would run straight through B1. Move one of them away."
 		);
 	});
 

@@ -481,6 +481,153 @@ const mutants = [
 		from: "let cost = g + length * (soft === 2 ? 2 : 1) + history;",
 		to: "let cost = g + length + history;",
 		tests: ["tests/regressions.test.ts", "tests/layout.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "entering same-net copper away from the target is charged as a crossing",
+		file: "src/route.ts",
+		from: "if ((nextFlags & (OWN | SAME)) !== 0 && next !== targetCell) cost += SAME_NET_CROSSING;",
+		to: "if ((nextFlags & OWN) !== 0 && next !== targetCell) cost += SAME_NET_CROSSING;",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "a lead of another net is contact, not open board",
+		file: "src/route.ts",
+		from: "\t\t\t\t\tif ((flags & OTHER_END) !== 0) penalty += contact;",
+		to: "\t\t\t\t\tif ((flags & OTHER_END) !== 0) penalty += 0;",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "a loop is drawn along copper the net already has",
+		file: "src/route.ts",
+		from: "const along = loops.length === 0 ? undefined : this.#copperPaths(unit);",
+		to: "const along = undefined;",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "a connection end joins the tree only where it carries no arrow",
+		file: "src/route.ts",
+		from: "return fromIn ? wire.joinFrom : wire.joinTo;",
+		to: "return fromIn ? wire.joinTo : wire.joinFrom;",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "equal-key drafts are ordered by their endpoints, not by source order",
+		file: "src/route.ts",
+		from: "\t\t\t\tNumber(signature.get(left)! > signature.get(right)!) - Number(signature.get(left)! < signature.get(right)!) ||\n",
+		to: "",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "a same-net crossing is marked with a dot",
+		file: "src/layout.ts",
+		from: "if (!inside || seen.has(key)) continue;",
+		to: "if (true) continue;",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "the renderer draws every same-net dot, not only the junction",
+		file: "src/renderer.ts",
+		from: "\tconst junction = [...(routed.junction === undefined ? [] : [routed.junction]), ...(routed.joins ?? [])]",
+		to: "\tconst junction = [...(routed.junction === undefined ? [] : [routed.junction])]",
+		tests: ["tests/renderer.test.ts", "tests/regressions.test.ts"]
+	},
+	{
+		name: "batched output dots every same-net crossing too",
+		file: "src/renderer.ts",
+		from: "\t\tfor (const point of [...(routed.junction === undefined ? [] : [routed.junction]), ...(routed.joins ?? [])]) {",
+		to: "\t\tfor (const point of [...(routed.junction === undefined ? [] : [routed.junction])]) {",
+		tests: ["tests/renderer.test.ts", "tests/regressions.test.ts"]
+	},
+	{
+		name: "copper drawn twice on one row is one crossing",
+		file: "src/layout.ts",
+		from: "\t\t\t\tif (crossings.get(step - 1)?.includes(run.y) === true) continue;\n",
+		to: "",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "a bridge stops short of its own net joining the run",
+		file: "src/layout.ts",
+		from: "limit = Math.min(limit, Math.floor((Math.abs(ty - y) - 1) / 1000) * 1000);",
+		to: "limit = Math.min(limit, radius);",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "a lead is never run through another body",
+		file: "src/layout.ts",
+		from: "if (body.owner === owner || (facing && (body.owner === connection.from.componentId || body.owner === connection.to.componentId)) || !segmentEntersRect(stub.a, stub.b, body.rect)) continue;",
+		to: "if (body.owner === owner || body.owner === connection.from.componentId || body.owner === connection.to.componentId || !segmentEntersRect(stub.a, stub.b, body.rect)) continue;",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "a lead is never run into a free pin",
+		file: "src/layout.ts",
+		from: "if (free.owner === owner || segmentContact(stub.a, stub.b, free.point, free.point) === undefined) continue;",
+		to: "continue;",
+		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
+	},
+	{
+		name: "a register numbers its extra inputs from two",
+		file: "src/symbols/logic.ts",
+		from: "left: ['in', ...range('in', component.inputs).slice(1)],",
+		to: "left: ['in', ...range('in', component.inputs)],",
+		tests: ["tests/ports.test.ts", "tests/regressions.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "a tristate buffer draws its enable lead to the pin",
+		file: "src/symbols/logic.ts",
+		from: "<path ${paint} d=\"M 0 42 V 12\" />",
+		to: "<path ${paint} d=\"M 0 24 V 12\" />",
+		tests: ["tests/ports.test.ts"]
+	},
+	{
+		name: "a splitter's tap is its first output",
+		file: "src/symbols/logic.ts",
+		from: "if (component.kind === 'bus' && name === 'tap') return ports.find((entry) => entry.id === right[0]);",
+		to: "if (component.kind === 'bus' && name === 'tap') return undefined;",
+		tests: ["tests/ports.test.ts", "tests/regressions.test.ts", "tests/parser.test.ts"]
+	},
+	{
+		name: "text that fits is never compressed",
+		file: "src/symbols/common.ts",
+		from: "return mathLabelTextWidthAt(value, fontSize) <= maximum ?",
+		to: "return mathLabelTextWidthAt(value, fontSize) < 0 ?",
+		tests: ["tests/renderer.test.ts", "tests/uml.test.ts", "tests/snapshot.test.ts", "tests/math-label.test.ts"]
+	},
+	{
+		name: "bold text is measured wider",
+		file: "src/math-label.ts",
+		from: "const BOLD_FACTOR = 1.043;",
+		to: "const BOLD_FACTOR = 1;",
+		tests: ["tests/math-label.test.ts", "tests/uml.test.ts", "tests/renderer.test.ts"]
+	},
+	{
+		name: "a parsed label is frozen before it is shared",
+		file: "src/math-label.ts",
+		from: "const segments = Object.freeze(parse(value).map((segment) => Object.freeze(segment)));",
+		to: "const segments = parse(value);",
+		tests: ["tests/math-label.test.ts"]
+	},
+	{
+		name: "a placement failure takes its dependants down silently",
+		file: "src/placement.ts",
+		from: "\tfor (const id of [...failed]) abandon(id);\n",
+		to: "",
+		tests: ["tests/placement.test.ts", "tests/diagnose.test.ts", "tests/parser.test.ts", "tests/regressions.test.ts"]
+	},
+	{
+		name: "a cycle is reported once, not once per member",
+		file: "src/placement.ts",
+		from: "\t\tfor (const member of cycle) abandon(member);\n",
+		to: "",
+		tests: ["tests/placement.test.ts", "tests/diagnose.test.ts", "tests/parser.test.ts"]
+	},
+	{
+		name: "left-of mirrors right-of exactly",
+		file: "src/placement.ts",
+		from: "return { x: reference.minX - gap - selfAtOrigin.maxX, y: position.y };",
+		to: "return { x: reference.minX - gap - selfAtOrigin.maxX + 1, y: position.y };",
+		tests: ["tests/placement.test.ts"]
 	}
 ];
 

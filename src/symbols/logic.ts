@@ -162,80 +162,96 @@ const DIGITAL_VARIANTS: Readonly<Partial<Record<DigitalComponent['kind'], readon
 	bus: ['splitter', BUS_TYPES]
 };
 
-const OUTPUT_NAMES = new Set(['q', 'nq', 'gt', 'eq', 'lt', 'tap']);
-const FLIPFLOP_NAMES = new Set(['d', 'j', 'k', 's', 'r', 't', 'clock', 'enable', 'preset', 'clear', 'q', 'nq']);
-const CONTROL_NAMES = new Set(['clock', 'enable', 'preset', 'clear']);
-
-/** Whether a name is a terminal of this block at all. */
-function digitalValid(component: DigitalComponent, name: string): boolean {
-	if (indexed(name, component.inputs, component.outputs) !== undefined) return true;
-	switch (component.kind) {
-		case 'buffer':
-			return component.variant?.startsWith('tristate') === true && name === 'enable';
-		case 'flipflop':
-			return FLIPFLOP_NAMES.has(name);
-		case 'mux':
-			return name === 'select' || name === 'enable';
-		case 'register':
-		case 'counter':
-			return CONTROL_NAMES.has(name);
-		case 'comparator':
-			return name === 'gt' || name === 'eq' || name === 'lt';
-		case 'bus':
-			return name === 'bus' || name === 'tap';
-		default:
-			return false;
-	}
+/**
+ * Each side's terminals in drawing order: data inputs on the left, outputs on
+ * the right, clock, enable and select below, preset and clear above. Every
+ * terminal has its own slot, so no two distinct signals share a point.
+ */
+interface DigitalSides {
+	readonly left: readonly string[];
+	readonly right: readonly string[];
+	readonly bottom: readonly string[];
+	readonly top: readonly string[];
 }
 
-/** Position of any valid terminal name. */
-function digitalPort(component: DigitalComponent, name: string): LocalPort {
-	const h = component.bodyHeight * 1000;
-	if (name === 'clock' || name === 'enable' || name === 'select') return { id: name, x: 0, y: h / 2 + 16_000, nx: 0, ny: 1 };
-	if (name === 'preset' || name === 'clear') return { id: name, x: 0, y: -h / 2 - 16_000, nx: 0, ny: -1 };
-	const output =
-		name === 'out' || name.startsWith('out') || OUTPUT_NAMES.has(name) || (component.kind === 'bus' && component.variant === 'joiner' && name === 'bus');
-	const digits = /\d+$/.exec(name);
-	const index = digits === null ? 0 : Number(digits[0]) - 1;
-	const total = output ? component.outputs : component.inputs;
-	return {
-		id: name,
-		x: (output ? 1 : -1) * (component.bodyWidth * 500 + 16_000),
-		y: distributed(index, Math.max(1, total), h),
-		nx: output ? 1 : -1,
-		ny: 0
-	};
-}
-
-function digitalNames(component: DigitalComponent): string[] {
+function digitalSides(component: DigitalComponent): DigitalSides {
 	const range = (prefix: string, total: number) => Array.from({ length: total }, (_, index) => `${prefix}${index + 1}`);
 	switch (component.kind) {
 		case 'logic':
 		case 'clock':
-			return ['out'];
+			return { left: [], right: ['out'], bottom: [], top: [] };
 		case 'flipflop': {
-			const inputs =
-				component.variant === 'jk' ? ['j', 'k', 'clock'] : component.variant === 't' ? ['t', 'clock', 'clear'] : component.variant === 'sr-latch' ? ['s', 'r', 'enable'] : ['d', 'clock', 'clear'];
-			return [...inputs, 'q', 'nq', 'preset'];
+			const variant = component.variant;
+			return {
+				left: variant === 'jk' ? ['j', 'k'] : variant === 't' ? ['t'] : variant === 'sr-latch' ? ['s', 'r'] : ['d'],
+				right: ['q', 'nq'],
+				bottom: variant === 'sr-latch' ? ['enable'] : ['clock'],
+				top: variant === 'd' || variant === 't' ? ['preset', 'clear'] : ['preset']
+			};
 		}
 		case 'register':
-			return ['in', 'out', 'clock', 'enable', 'clear'];
+			/* A register's first data terminals are named `in` and `out`; any more
+			   it is given are numbered on from 2. */
+			return {
+				left: ['in', ...range('in', component.inputs).slice(1)],
+				right: ['out', ...range('out', component.outputs).slice(1)],
+				bottom: ['clock', 'enable'],
+				top: ['clear']
+			};
 		case 'comparator':
-			return ['in1', 'in2', 'gt', 'eq', 'lt'];
+			return { left: ['in1', 'in2'], right: ['gt', 'eq', 'lt'], bottom: [], top: [] };
 		case 'bus':
 			return component.variant === 'tap'
-				? ['bus', 'tap']
+				? { left: ['bus'], right: ['tap'], bottom: [], top: [] }
 				: component.variant === 'joiner'
-					? [...range('in', component.inputs), 'bus']
-					: ['bus', ...range('out', component.outputs)];
-		default: {
-			const names = [...range('in', component.inputs), ...range('out', component.outputs)];
-			if (component.kind === 'counter') names.push('clock', 'enable', 'clear');
-			else if (component.kind === 'mux') names.push('select', 'enable');
-			else if (component.kind === 'buffer' && component.variant?.startsWith('tristate') === true) names.push('enable');
-			return names;
-		}
+					? { left: range('in', component.inputs), right: ['bus'], bottom: [], top: [] }
+					: { left: ['bus'], right: range('out', component.outputs), bottom: [], top: [] };
+		default:
+			return {
+				left: range('in', component.inputs),
+				right: range('out', component.outputs),
+				bottom:
+					component.kind === 'counter'
+						? ['clock', 'enable']
+						: component.kind === 'mux'
+							? ['select', 'enable']
+							: component.kind === 'buffer' && component.variant?.startsWith('tristate') === true
+								? ['enable']
+								: [],
+				top: component.kind === 'counter' ? ['clear'] : []
+			};
 	}
+}
+
+/** Every terminal of a block, placed: left, right, bottom, then top. */
+function digitalPorts(component: DigitalComponent): LocalPort[] {
+	const { left, right, bottom, top } = digitalSides(component);
+	const w = component.bodyWidth * 1000;
+	const h = component.bodyHeight * 1000;
+	const across = (names: readonly string[], x: number, nx: number) =>
+		names.map((id, index) => ({ id, x, y: distributed(index, names.length, h), nx, ny: 0 }));
+	const along = (names: readonly string[], y: number, ny: number) =>
+		names.map((id, index) => ({ id, x: distributed(index, names.length, w), y, nx: 0, ny }));
+	return [
+		...across(left, -(w / 2 + 16_000), -1),
+		...across(right, w / 2 + 16_000, 1),
+		...along(bottom, h / 2 + 16_000, 1),
+		...along(top, -(h / 2 + 16_000), -1)
+	];
+}
+
+/** A terminal by name, `in`/`out` and `inN`/`outN` addressing the sides in order. */
+function digitalResolve(component: DigitalComponent, name: string): LocalPort | undefined {
+	const ports = digitalPorts(component);
+	const exact = ports.find((entry) => entry.id === name);
+	if (exact !== undefined) return exact;
+	const { left, right } = digitalSides(component);
+	/* `tap` on a splitter or joiner is the first output, as in 0.x. */
+	if (component.kind === 'bus' && name === 'tap') return ports.find((entry) => entry.id === right[0]);
+	const terminal = indexed(name, left.length, right.length);
+	if (terminal === undefined) return undefined;
+	const id = (terminal.output ? right : left)[terminal.index];
+	return ports.find((entry) => entry.id === id);
 }
 
 const DIGITAL_LABELS: Readonly<Partial<Record<DigitalComponent['kind'], string>>> = {
@@ -279,21 +295,21 @@ const digital: KindDef<DigitalComponent> = {
 		return component;
 	},
 	extents: (component) => [component.bodyWidth * 500 + 16_000, component.bodyHeight * 500 + 16_000],
-	ports: (component) => digitalNames(component).map((name) => digitalPort(component, name)),
-	resolve: (component, name) => (digitalValid(component, name) ? digitalPort(component, name) : undefined),
+	ports: digitalPorts,
+	resolve: digitalResolve,
 	draw(component, paint) {
 		if (component.kind === 'buffer') {
 			const bubble = component.variant === 'tristate-inverter' || component.variant === 'schmitt-inverter';
-			return `<path ${paint} d="M -44 0 H -28 M -28 -22 L 24 0 -28 22 Z M ${bubble ? 32 : 24} 0 H 44${component.variant?.startsWith('schmitt') === true ? ' M -17 -8 H -6 V 8 H 5' : ''}" />${bubble ? `<circle ${paint} cx="28" cy="0" r="4" />` : ''}${component.variant?.startsWith('tristate') === true ? `<path ${paint} d="M 0 34 V 12" />` : ''}`;
+			return `<path ${paint} d="M -44 0 H -28 M -28 -22 L 24 0 -28 22 Z M ${bubble ? 32 : 24} 0 H 44${component.variant?.startsWith('schmitt') === true ? ' M -17 -8 H -6 V 8 H 5' : ''}" />${bubble ? `<circle ${paint} cx="28" cy="0" r="4" />` : ''}${component.variant?.startsWith('tristate') === true ? `<path ${paint} d="M 0 42 V 12" />` : ''}`;
 		}
 		const w = component.bodyWidth * 1000;
 		const h = component.bodyHeight * 1000;
+		/* A lead from each terminal to the body edge, on every side. */
 		let stubs = '';
-		for (let index = 0; index < component.inputs; index += 1) {
-			stubs += `<path ${paint} d="M ${n(-w / 2 - 16_000)} ${n(distributed(index, Math.max(1, component.inputs), h))} H ${n(-w / 2)}" />`;
-		}
-		for (let index = 0; index < component.outputs; index += 1) {
-			stubs += `<path ${paint} d="M ${n(w / 2)} ${n(distributed(index, component.outputs, h))} H ${n(w / 2 + 16_000)}" />`;
+		for (const port of digitalPorts(component)) {
+			stubs += port.ny === 0
+				? `<path ${paint} d="M ${n(port.x)} ${n(port.y)} H ${n(port.nx * (w / 2))}" />`
+				: `<path ${paint} d="M ${n(port.x)} ${n(port.y)} V ${n(port.ny * (h / 2))}" />`;
 		}
 		return `<rect ${paint} x="${n(-w / 2)}" y="${n(-h / 2)}" width="${component.bodyWidth}" height="${component.bodyHeight}" rx="3" />${stubs}`;
 	},

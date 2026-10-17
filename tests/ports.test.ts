@@ -4,14 +4,21 @@
  * The fixture was recorded from the 0.8.0 build: for each kind and variant, the
  * names the parser accepted, the canonical terminal each one addresses, and
  * where that terminal sits, rounded to the milli-unit 1.0 draws on. A name not
- * listed was rejected. Two entries differ on purpose: 0.8 resolved reset.out1 to
- * the reset's input, and 1.0 resolves it to the output; and a qgate carrying a
- * parameter is sized to its text's measured width, which is narrower than 0.8's
- * estimate, so its two terminals sit closer in.
+ * listed was rejected. Some entries differ on purpose:
+ *
+ * - 0.8 resolved reset.out1 to the reset's input; 1.0 resolves it to the output.
+ * - A qgate carrying a parameter is sized to its text's measured width, which is
+ *   narrower than 0.8's estimate, so its two terminals sit closer in.
+ * - 0.8 drew distinct terminals of digital blocks at one point — a flip-flop's
+ *   j and k, q and nq, preset and clear; a mux's select and enable; a register's
+ *   or counter's clock and enable; a comparator's gt, eq and lt. Each now has a
+ *   slot of its own. A flip-flop accepts only its own variant's letters, where
+ *   0.8 drew any of them on its first input, and a register lists the in2, in3
+ *   and out2 terminals 0.8 drew and accepted but did not enumerate.
  */
 import { describe, expect, test } from 'vitest';
 
-import { canonicalPortName, enumerateComponentPorts, parseSchematic, resolvePortGeometry } from '../src/index.js';
+import { canonicalPortName, compileSchematic, enumerateComponentPorts, parseSchematic, resolvePortGeometry } from '../src/index.js';
 import { canonicalName } from '../src/symbols/index.js';
 import recorded from './fixtures/port-resolution-0.8.json';
 
@@ -37,6 +44,37 @@ describe('port resolution parity with 0.8', () => {
 			const geometry = resolvePortGeometry(component, name);
 			expect([canonicalPortName(component, name), geometry.point.x, geometry.point.y, geometry.normal.x, geometry.normal.y], name).toEqual(expected);
 		}
+	});
+
+	test('no two distinct terminals of any kind share a point', () => {
+		for (const declaration of Object.keys(fixture)) {
+			if (typeof fixture[declaration] === 'string') continue;
+			const component = parseSchematic(declaration, fence).components[0]!;
+			const points = enumerateComponentPorts(component).map((port) => `${port.point.x},${port.point.y}`);
+			expect(new Set(points).size, declaration).toBe(points.length);
+		}
+	});
+
+	test('every terminal of a digital block has a lead drawn to it', () => {
+		const source = 'register:R "r" at (500, 500) #amber\nflipflop:F "f" at (300, 500) #amber [type=jk]';
+		const document = parseSchematic(source, fence);
+		const svg = compileSchematic(source, { ...fence, mode: 'full' }).svg;
+		for (const component of document.components) {
+			for (const port of enumerateComponentPorts(component)) {
+				/* Leads are drawn in local coordinates, starting at the terminal. */
+				const milli = (value: number) => Math.round(value * 1000) / 1000;
+				const local = `M ${milli(port.point.x - component.x)} ${milli(port.point.y - component.y)} `;
+				expect(svg, `${component.id}.${port.id}`).toContain(local);
+			}
+		}
+	});
+
+	test("a tristate buffer's enable lead reaches its terminal", () => {
+		const source = 'buffer:T "t" at (700, 500) #amber [type=tristate]';
+		const [component] = parseSchematic(source, fence).components;
+		const enable = enumerateComponentPorts(component!).find((port) => port.id === 'enable')!;
+		expect([enable.point.x - component!.x, enable.point.y - component!.y]).toEqual([0, 42]);
+		expect(compileSchematic(source, { ...fence, mode: 'full' }).svg).toContain('d="M 0 42 V 12"');
 	});
 
 	test('the parser rejects a name the registry rejects, and says how', () => {

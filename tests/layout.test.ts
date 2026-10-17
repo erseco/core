@@ -526,6 +526,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			curve: 'ortho',
 			markerStart: 'none',
 			markerEnd: 'none',
+			relation: 'signal',
 			line: 3
 		};
 		const verticalB: SchematicConnection = {
@@ -893,7 +894,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		);
 	});
 
-	test('elides redundant vertical commands when a bridge consumes a segment edge', () => {
+	test('keeps other nets off a pin\'s lead rather than bridging it', () => {
 		const lookup = new Map<string, SchematicComponent>();
 		const terminal = (id: string, x: number, y: number): PortComponent => {
 			const component: PortComponent = { kind: 'port', id, label: id, x, y, color: token, line: 1 };
@@ -922,12 +923,17 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			connection(leftBottom, 'out', rightBottom, 'in'),
 			connection(top, 'target', bottom, 'control')
 		], endpointOnlyMap);
-		expect(routes[2]!.d).toBe(
-			'M 250 49 A 5 5 0 0 0 250 59 V 181 A 5 5 0 0 0 250 191'
-		);
+		/* The horizontals would cross the vertical's leads five units from its
+		   pins; a lead is never crossed, so they step over the pins instead and
+		   the vertical runs clean. */
+		expect(routes.map((route) => route.d)).toEqual([
+			'M 92 54 H 240 V 36 H 264 V 54 H 408',
+			'M 92 186 H 240 V 204 H 264 V 186 H 408',
+			'M 250 49 V 191'
+		]);
 	});
 
-	test('keeps a horizontal wire to one command when crossings sit at both of its ends', () => {
+	test('keeps a horizontal wire to one command when other nets pass both of its ends', () => {
 		const lookup = new Map<string, SchematicComponent>();
 		const terminal = (
 			id: string,
@@ -964,9 +970,12 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		);
 		/* Bridges belong to the vertical runs, so the horizontal wire keeps one
 		   command even when crossings sit right at both of its ends. */
+		/* Crossing at x = 94 would cross the horizontal's lead, two units from
+		   its pin at x = 92; the verticals step round it instead, and the
+		   horizontal keeps one command. */
 		expect(routes.map((route) => route.d)).toEqual([
-			'M 94 62 V 115 A 5 5 0 0 0 94 125 V 178',
-			'M 406 62 V 115 A 5 5 0 0 0 406 125 V 178',
+			'M 94 62 V 108 H 84 V 132 H 94 V 178',
+			'M 406 62 V 108 H 420 V 132 H 406 V 178',
 			'M 92 120 H 408'
 		]);
 	});
@@ -1009,7 +1018,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			to: { componentId: 'BOTTOM', port: 'control' },
 			color: token, curve: 'ortho', markerStart: 'none', markerEnd: 'none', line: 13
 		}, components)).toThrow(
-			'Line 13: No orthogonal route from TOP.target to BOTTOM.control clears every component and earlier trace: move one of them apart, widen the fence bounds, or join the traces that meet with a shared net.'
+			'Line 13: TOP.target sits against NEIGHBOR: the wire leaving it would run straight through NEIGHBOR. Move one of them away.'
 		);
 	});
 
@@ -1350,5 +1359,51 @@ describe('drawn wires and terminals', () => {
 		expect(() =>
 			parseSchematic('resistor:R1 "a" at (100, 100) #amber\nresistor:R2 "b" at (500, 300) #amber\nresistor:R3 "c" at (300, 300) #amber\nR1.out -> R2.in #amber [line]', fence)
 		).not.toThrow();
+	});
+});
+
+describe('bridges and same-net dots on bare terminals', () => {
+	const terminal = (id: string, x: number, y: number, orientation: PortComponent['orientation'] = 'right'): PortComponent => ({
+		kind: 'port',
+		id,
+		label: id,
+		x,
+		y,
+		orientation,
+		color: token,
+		line: 1
+	});
+	const terminals = (...list: PortComponent[]) => {
+		const components = new Map(list.map((component) => [component.id, component] as const));
+		return { get: (id: string) => components.get(id), values: () => [][Symbol.iterator]() } as unknown as ReadonlyMap<string, SchematicComponent>;
+	};
+	const connection = (from: string, fromPort: string, to: string, toPort: string, extra: Partial<SchematicConnection> = {}): SchematicConnection => ({
+		from: { componentId: from, port: fromPort },
+		to: { componentId: to, port: toPort },
+		color: token,
+		curve: 'ortho',
+		markerStart: 'none',
+		markerEnd: 'none',
+		line: 2,
+		...extra
+	});
+
+	test('a bridge that ends exactly at a corner adds no zero-length run', () => {
+		const routes = routeConnections(
+			[connection('L', 'out', 'R', 'in'), connection('T', 'out', 'P', 'in')],
+			terminals(terminal('L', 50, 100), terminal('R', 600, 100), terminal('T', 300, 20, 'down'), terminal('P', 450, 104))
+		);
+		expect(routes.map((route) => route.d)).toEqual(['M 92 100 H 558', 'M 300 62 V 96 A 4 4 0 0 0 300 104 H 408']);
+	});
+
+	test('one wire crossing two runs of its own net carries a dot at each', () => {
+		const net = { netId: 'N', net: 'N' } as Partial<SchematicConnection>;
+		const routes = routeConnections(
+			[connection('A', 'out', 'B', 'in', net), connection('C', 'out', 'D', 'in', net), connection('T', 'out', 'U', 'out', net)],
+			terminals(terminal('A', 50, 100), terminal('B', 600, 100), terminal('C', 50, 200), terminal('D', 600, 200), terminal('T', 300, 20, 'down'), terminal('U', 300, 300, 'up')),
+			{ width: 650, height: 340 }
+		);
+		expect(routes[2]).toMatchObject({ d: 'M 300 62 V 258', joins: [{ x: 300, y: 100 }, { x: 300, y: 200 }] });
+		expect(routes[0]!.joins).toBeUndefined();
 	});
 });
