@@ -77,7 +77,7 @@ describe('routing', () => {
 		}
 	});
 
-	test('a branch joining at its destination ends on the net and keeps its direction', () => {
+	test('a connection written to a junction part is drawn to it, not tapped short of it', () => {
 		const result = compileSchematic(
 			[
 				'resistor:R1 "a" at (150, 100) #amber',
@@ -94,9 +94,9 @@ describe('routing', () => {
 		);
 		expect(result.document.connections[2]!.trunk).toBe('to');
 		expect(result.svg).toContain('data-wire-trunk="to"');
-		/* Drawn from R2 towards the tap, so the endpoint dot every signal wire
-		   ends in is the junction; no separate junction dot is needed. */
-		expect(traces(result.svg)[2]).toBe('M 192 300 H 204 V 200');
+		/* The author chose where the two meet: both run to J, from above and
+		   below, and J's own dot is the junction. */
+		expect(traces(result.svg).slice(1)).toEqual(['M 192 100 H 450 V 200', 'M 192 300 H 450 V 200']);
 		expect(junctions(result.svg)).toEqual([]);
 	});
 

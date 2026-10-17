@@ -628,6 +628,55 @@ const mutants = [
 		from: "return { x: reference.minX - gap - selfAtOrigin.maxX, y: position.y };",
 		to: "return { x: reference.minX - gap - selfAtOrigin.maxX + 1, y: position.y };",
 		tests: ["tests/placement.test.ts"]
+	},
+	{
+		name: "a junction has no lead: its wires leave the node itself",
+		file: "src/layout.ts",
+		from: "\t\tif (component.kind === 'junction') return { owner: owners.get(componentId)!, point: placed.point, escape: placed.point };\n",
+		to: "",
+		tests: ["tests/regressions.test.ts", "tests/trunk.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "a junction's body never stands in its own wires' way",
+		file: "src/layout.ts",
+		from: "kind: component.kind === 'junction' ? 'node' : 'body', rect: body }",
+		to: "kind: 'body', rect: body }",
+		tests: ["tests/regressions.test.ts", "tests/trunk.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "a wire written to a junction part is drawn to it",
+		file: "src/layout.ts",
+		from: "\t\t\tjoinTo: signal && connection.markerEnd === 'none' && components.get(connection.to.componentId)!.kind !== 'junction',",
+		to: "\t\t\tjoinTo: signal && connection.markerEnd === 'none',",
+		tests: ["tests/regressions.test.ts", "tests/trunk.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "a junction's text sits beside its dot",
+		file: "src/layout.ts",
+		from: "\tif (component.kind === 'junction') {\n\t\treturn {",
+		to: "\tif (component.kind === 'nothing') {\n\t\treturn {",
+		tests: ["tests/regressions.test.ts", "tests/trunk.test.ts", "tests/layout.test.ts"]
+	},
+	{
+		name: "text set beside a part starts at its anchor",
+		file: "src/renderer.ts",
+		from: "\tconst textStart = anchors.textX === undefined ? '' : ' style=\"text-anchor:start\"';",
+		to: "\tconst textStart = '';",
+		tests: ["tests/regressions.test.ts"]
+	},
+	{
+		name: "a part's extent covers text set beside it",
+		file: "src/layout.ts",
+		from: "\t\t\trect.maxX = Math.max(rect.maxX, text.maxX);\n",
+		to: "",
+		tests: ["tests/regressions.test.ts", "tests/layout.test.ts", "tests/topology.test.ts", "tests/parser.test.ts"]
+	},
+	{
+		name: "a junction's dot keeps out every other net",
+		file: "src/route.ts",
+		from: "\t\t\t\tif (!own.has(obstacle.owner)) block(obstacle.rect);",
+		to: "\t\t\t\tif (false) block(obstacle.rect);",
+		tests: ["tests/regressions.test.ts"]
 	}
 ];
 

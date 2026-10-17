@@ -77,6 +77,12 @@ export interface ComponentTextAnchors {
 	labelY: number;
 	designatorWidth: number;
 	labelWidth: number;
+	/**
+	 * Where both rows start, start-aligned, when they sit beside the component
+	 * rather than centred above and below it: a junction's text, which must
+	 * leave all four of its exits clear.
+	 */
+	textX?: number;
 }
 
 /** A canonical, physically rendered component terminal and its absolute SVG coordinate. */
@@ -277,6 +283,11 @@ export function componentObstacleRectangle(component: SchematicComponent, cleara
 /** External designator and label fitting metrics. */
 export function componentTextAnchors(component: SchematicComponent): ComponentTextAnchors {
 	const halfHeight = fromMilli(halfExtents(component)[1]);
+	/* Up and to the right of the dot, clear of both axes through it once
+	   wires keep their clearance from text. */
+	if (component.kind === 'junction') {
+		return { designatorY: -27, labelY: -10, designatorWidth: mathLabelTextWidthAt(component.id, TEXT_SIZE), labelWidth: mathLabelTextWidthAt(component.label, TEXT_SIZE), textX: 10 };
+	}
 	return {
 		designatorY: -halfHeight - DESIGNATOR_BASELINE_GAP,
 		labelY: halfHeight + LABEL_BASELINE_GAP,
@@ -291,10 +302,11 @@ export function labelRects(component: SchematicComponent): readonly IRect[] {
 	const anchors = componentTextAnchors(component);
 	const x = component.x;
 	const y = component.y;
+	const start = anchors.textX;
 	const row = (width: number, baseline: number): IRect => ({
-		minX: toMilli(x - width / 2 - TEXT_HORIZONTAL_GUTTER),
+		minX: toMilli((start === undefined ? x - width / 2 : x + start) - TEXT_HORIZONTAL_GUTTER),
 		minY: toMilli(y + baseline - TEXT_ASCENT_GUTTER),
-		maxX: toMilli(x + width / 2 + TEXT_HORIZONTAL_GUTTER),
+		maxX: toMilli((start === undefined ? x + width / 2 : x + start + width) + TEXT_HORIZONTAL_GUTTER),
 		maxY: toMilli(y + baseline + TEXT_DESCENT_GUTTER)
 	});
 	return [row(anchors.designatorWidth, anchors.designatorY), row(anchors.labelWidth, anchors.labelY)];
@@ -313,10 +325,14 @@ export function componentExtent(component: SchematicComponent): IRect {
 		const half = Math.max(w, textHalf);
 		rect = {
 			minX: x - half,
-			minY: y + toMilli(anchors.designatorY - TEXT_ASCENT_GUTTER),
+			minY: Math.min(y - h, y + toMilli(anchors.designatorY - TEXT_ASCENT_GUTTER)),
 			maxX: x + half,
-			maxY: y + toMilli(anchors.labelY + TEXT_DESCENT_GUTTER)
+			maxY: Math.max(y + h, y + toMilli(anchors.labelY + TEXT_DESCENT_GUTTER))
 		};
+		for (const text of labelRects(component)) {
+			rect.minX = Math.min(rect.minX, text.minX);
+			rect.maxX = Math.max(rect.maxX, text.maxX);
+		}
 	}
 	const radius = PORT_HOTSPOT_RADIUS * 1000;
 	for (const port of placedPorts(component)) {
@@ -586,7 +602,8 @@ export function routeSchematicConnections(
 	const manual: { owner: string; rect: IRect }[] = [];
 	for (const [index, component] of list.entries()) {
 		const body = bodyRect(component, 0);
-		obstacles.push({ owner: index, kind: 'body', rect: body }, { owner: index, kind: 'expanded', rect: bodyRect(component, clearance) });
+		/* A junction is where its own wires meet: its dot keeps out only other nets. */
+		obstacles.push({ owner: index, kind: component.kind === 'junction' ? 'node' : 'body', rect: body }, { owner: index, kind: 'expanded', rect: bodyRect(component, clearance) });
 		bodies.push({ owner: component.id, rect: body });
 		manual.push({ owner: component.id, rect: body });
 		for (const rect of labelRects(component)) {
@@ -722,6 +739,8 @@ export function routeSchematicConnections(
 	const terminal = (componentId: string, port: string) => {
 		const placed = endpoint(componentId, port);
 		const component = components.get(componentId)!;
+		/* A junction has no lead: wires leave its node in any direction. */
+		if (component.kind === 'junction') return { owner: owners.get(componentId)!, point: placed.point, escape: placed.point };
 		const expanded = bodyRect(component, clearance);
 		let escape = {
 			x: placed.normal.x < 0 ? expanded.minX : placed.normal.x > 0 ? expanded.maxX : placed.point.x,
@@ -826,8 +845,9 @@ export function routeSchematicConnections(
 			to: terminal(connection.to.componentId, connection.to.port),
 			net: identity[index]!,
 			group: signal ? groups.find(index) : -1,
-			joinFrom: signal && connection.markerStart === 'none',
-			joinTo: signal && connection.markerEnd === 'none',
+			/* An end on a junction part is drawn to it: the author chose where it joins. */
+			joinFrom: signal && connection.markerStart === 'none' && components.get(connection.from.componentId)!.kind !== 'junction',
+			joinTo: signal && connection.markerEnd === 'none' && components.get(connection.to.componentId)!.kind !== 'junction',
 			label: connection.label === undefined ? undefined : (route) => labelRectAt(connection, midpoint(route))
 		};
 	});

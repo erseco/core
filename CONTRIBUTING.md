@@ -57,7 +57,7 @@ whether your change should be updating it.
 | `bun run test` | Behaviour; 20 suites under `tests/` | via coverage |
 | `bun run test:coverage` | 100% on all four axes | yes |
 | `bun run test:fuzz` | Bounded fuzzing — no hang, no unhandled throw | via `test` |
-| `bun run test:mutation` | 89 named mutants, all of which must die | yes |
+| `bun run test:mutation` | 96 named mutants, all of which must die | yes |
 | `bun run test:visual` | Chromium pixel goldens | yes |
 | `bun run size` | gzip and brotli-11 budgets for the compile path and the package | yes |
 | `node scripts/benchmark.mjs` | Latency ceilings and per-component scaling | no — local only |
@@ -74,7 +74,7 @@ exist. Closing that gap is what the mutation gate is for.
 
 ### The mutation gate
 
-`scripts/mutation.mjs` holds 89 named mutants: a precise source substitution plus the tests that must
+`scripts/mutation.mjs` holds 96 named mutants: a precise source substitution plus the tests that must
 fail when it is applied. Each is stated as a *property* rather than an edit:
 
 ```js

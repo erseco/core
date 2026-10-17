@@ -635,6 +635,9 @@ function componentMarkup(
 	const label = escapeXml(component.label);
 	const renderedLabel = renderMathLabelTspans(component.label);
 	const anchors = componentTextAnchors(component);
+	/* Rows set beside the component start at their anchor; the rest are centred. */
+	const textX = anchors.textX ?? 0;
+	const textStart = anchors.textX === undefined ? '' : ' style="text-anchor:start"';
 	const id = escapeXml(component.id);
 	const vectorId = `${idPrefix}-node-${index}-vector`;
 	const rotation = componentRotation(component);
@@ -670,7 +673,7 @@ function componentMarkup(
 	 */
 	const labels = isUmlComponent(component)
 		? ''
-		: `<text class="schematic-designator" x="0" y="${svgNumber(anchors.designatorY)}">${id}</text><text class="schematic-label" x="0" y="${svgNumber(anchors.labelY)}">${renderedLabel}</text>`;
+		: `<text class="schematic-designator" x="${textX}" y="${svgNumber(anchors.designatorY)}"${textStart}>${id}</text><text class="schematic-label" x="${textX}" y="${svgNumber(anchors.labelY)}"${textStart}>${renderedLabel}</text>`;
 	/* Without a stylesheet the paint travels on one inherited group instead of
 	   on each label — same pixels, one shared declaration per component. */
 	const externalLabels =
