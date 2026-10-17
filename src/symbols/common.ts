@@ -73,11 +73,6 @@ export function u(value: number): string {
 	return fmt(toMilli(value));
 }
 
-/** Milli-units of a text run at `advance` units per glyph. */
-export function textWidth(value: string, advance: number): number {
-	return toMilli(mathLabelTextWidth(value, advance));
-}
-
 /** Even distribution of `count` terminals across a centred `span`, in milli-units. */
 export function distributed(index: number, count: number, span: number): number {
 	return roundDiv((index + 1) * span * 2 - span * (count + 1), 2 * (count + 1));
@@ -163,10 +158,13 @@ export function orientation(options: ReadonlyMap<string, string>, line: number):
 	return value === undefined ? {} : { orientation: enumOption(value, 'right', SCHEMATIC_ORIENTATIONS, 'orientation', line) };
 }
 
-/** Indexed `inN`/`outN` terminal, with `in`/`out` meaning the first. */
+/**
+ * Indexed `inN`/`outN` terminal, with `in`/`out` meaning the first. A source
+ * such as a clock has no inputs; every numbered kind has at least one output.
+ */
 export function indexed(name: string, inputs: number, outputs: number): { output: boolean; index: number } | undefined {
 	if (name === 'in') return inputs > 0 ? { output: false, index: 0 } : undefined;
-	if (name === 'out') return outputs > 0 ? { output: true, index: 0 } : undefined;
+	if (name === 'out') return { output: true, index: 0 };
 	const match = /^(in|out)([1-9]\d*)$/.exec(name);
 	if (match === null) return undefined;
 	const index = Number(match[2]) - 1;

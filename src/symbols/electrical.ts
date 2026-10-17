@@ -296,7 +296,7 @@ const electrical: KindDef<ElectricalComponent> = {
 		switch (component.kind) {
 			case 'junction':
 			case 'testpoint':
-				return name === 'in' || name === 'out' ? NODE : undefined;
+				return name === 'in' ? NODE : name === 'out' ? { ...NODE, nx: 1 } : undefined;
 			case 'source':
 				return name === 'in' ? ports[0] : name === 'out' ? ports[1] : undefined;
 			case 'switch':

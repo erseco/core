@@ -131,6 +131,8 @@ interface SourceLine {
 	readonly line: number;
 	/** Columns the line was indented by in the source, so spans stay true. */
 	readonly indent: number;
+	/** Set when parameter substitution changed the text: its columns no longer match the source. */
+	readonly shifted?: boolean;
 }
 
 const HEADER = /^subcircuit\s+([A-Za-z][A-Za-z0-9_-]*)\s*(?:\[(.*)\])?\s*\{$/;
@@ -268,7 +270,7 @@ function elaborate(lines: readonly SourceLine[], budget: number): { declarations
 					'limit'
 				);
 			}
-			declarations.push({ syntax: scanDeclaration(text), source: { ...source, text }, prefix, dx, dy });
+			declarations.push({ syntax: scanDeclaration(text), source: text === source.text ? source : { ...source, text, shifted: true }, prefix, dx, dy });
 		}
 	};
 	expand(top, '', 0, 0, new Map(), []);
@@ -313,11 +315,17 @@ class Reporter {
 }
 
 /** One-based column range of a token on its source line. */
-function span(source: SourceLine, item: Token | undefined): { column: number; endColumn: number } {
+/** Where a token sits in the source; nothing for a line whose text substitution moved. */
+function span(source: SourceLine, item: Token | undefined): { column: number; endColumn: number } | undefined {
+	if (source.shifted === true) return undefined;
 	return item === undefined
 		? { column: source.indent + 1, endColumn: source.indent + source.text.length + 1 }
 		: { column: source.indent + item.start + 1, endColumn: source.indent + item.end + 1 };
 }
+
+/** Column ranges of a connection's two references: component then port, for each end. */
+type EndpointSpans = readonly [Span, Span, Span, Span];
+type Span = { column: number; endColumn: number } | undefined;
 
 /** Resolve `U1.mid` through every level of nesting to the terminal it names. */
 function terminal(id: string, port: string, line: number, instances: ReadonlyMap<string, string>, exposures: ReadonlyMap<string, { id: string; port: string }>): { id: string; port: string } {
@@ -339,11 +347,11 @@ function terminal(id: string, port: string, line: number, instances: ReadonlyMap
 }
 
 /** Validate a connection endpoint against the registry; returns the canonical port. */
-function checkEndpoint(endpoint: SchematicEndpoint, components: ReadonlyMap<string, SchematicComponent>, line: number): void {
+function checkEndpoint(endpoint: SchematicEndpoint, components: ReadonlyMap<string, SchematicComponent>, line: number, idSpan: Span, portSpan: Span): void {
 	const component = components.get(endpoint.componentId);
-	if (component === undefined) throw new SchematicSyntaxError(`Unknown component ${endpoint.componentId}.`, line, undefined, 'reference');
+	if (component === undefined) throw new SchematicSyntaxError(`Unknown component ${endpoint.componentId}.`, line, idSpan, 'reference');
 	if (canonicalName(component, endpoint.port) === undefined) {
-		throw new SchematicSyntaxError(`Port ${endpoint.componentId}.${endpoint.port} is invalid for ${component.kind}.`, line, undefined, 'reference');
+		throw new SchematicSyntaxError(`Port ${endpoint.componentId}.${endpoint.port} is invalid for ${component.kind}.`, line, portSpan, 'reference');
 	}
 }
 
@@ -499,6 +507,7 @@ function analyze(source: string, fence: SchematicFence, reporter: Reporter): Sch
 	const connections: SchematicConnection[] = [];
 	const byId = new Map<string, SchematicComponent>();
 	const poisoned = new Set<string>();
+	const endpointSpans = new Map<SchematicConnection, EndpointSpans>();
 	const pending: PendingPlacement[] = [];
 	for (const { syntax, source: line, prefix, dx, dy } of elaborated.declarations) {
 		if (syntax === undefined) {
@@ -534,6 +543,7 @@ function analyze(source: string, fence: SchematicFence, reporter: Reporter): Sch
 				if (options.width !== undefined) connection.width = options.width;
 				if (options.trunk) connection.trunk = 'from';
 				connections.push(connection);
+				endpointSpans.set(connection, [span(line, syntax.fromId), span(line, syntax.fromPort), span(line, syntax.toId), span(line, syntax.toPort)]);
 			} catch (error) {
 				reporter.report(error, undefined, span(line, syntax.tail));
 			}
@@ -628,8 +638,9 @@ function analyze(source: string, fence: SchematicFence, reporter: Reporter): Sch
 	for (const connection of connections) {
 		if (poisoned.has(connection.from.componentId) || poisoned.has(connection.to.componentId)) continue;
 		try {
-			checkEndpoint(connection.from, byId, connection.line);
-			checkEndpoint(connection.to, byId, connection.line);
+			const [fromId, fromPort, toId, toPort] = endpointSpans.get(connection)!;
+			checkEndpoint(connection.from, byId, connection.line, fromId, fromPort);
+			checkEndpoint(connection.to, byId, connection.line, toId, toPort);
 			connection.from.port = canonicalName(byId.get(connection.from.componentId)!, connection.from.port)!;
 			connection.to.port = canonicalName(byId.get(connection.to.componentId)!, connection.to.port)!;
 			if (connection.from.componentId === connection.to.componentId && connection.from.port === connection.to.port) {
@@ -713,6 +724,8 @@ export function parseSchematic(source: string, fence: SchematicFence): Schematic
 export function diagnoseSchematic(source: string, fence: SchematicFence): readonly SchematicSourceDiagnostic[] {
 	const reporter = new Reporter(false);
 	analyze(source, fence, reporter);
-	return reporter.diagnostics;
+	/* Source order, not phase order; a stable sort keeps phase order within a
+	   line. Only "no components" lacks a line, and it is only ever reported alone. */
+	return reporter.diagnostics.sort((left, right) => left.line! - right.line!);
 }
 

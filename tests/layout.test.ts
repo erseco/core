@@ -1,7 +1,12 @@
 /** Component geometry, port placement, route avoidance, and bridge-crossing verification. */
 import { describe, expect, test } from 'vitest';
 import {
+	classicalGateHeight,
+	compileSchematic,
 	composeQuarterTurns,
+	connectionLabelPoint,
+	distributedCoordinate,
+	quantumGateDimensions,
 	componentRectangle,
 	componentObstacleRectangle,
 	componentTextAnchors,
@@ -24,6 +29,7 @@ import {
 	type ClassicalGateComponent,
 	type PassiveComponent,
 	type PortComponent,
+	type RoutedConnection,
 	type SchematicColor,
 	type SchematicComponent,
 	type SchematicConnection,
@@ -152,11 +158,11 @@ ic:U1 "Mux" at (1430, 180) [left="A0,A1" right="Y0,Y1" top="CLK" bottom="VSS"]`,
 		const chip = findComponent(document, 'U1');
 		expect(resolvePortPoint(chip, 'A1')).toEqual({
 			x: 1370,
-			y: 190.66666666666666
+			y: 190.667
 		});
 		expect(resolvePortPoint(chip, 'Y1')).toEqual({
 			x: 1490,
-			y: 190.66666666666666
+			y: 190.667
 		});
 		expect(resolvePortPoint(chip, 'CLK')).toEqual({ x: 1430, y: 132 });
 		expect(resolvePortPoint(chip, 'VSS')).toEqual({ x: 1430, y: 228 });
@@ -293,7 +299,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			'M 0 100 C 121 100, 121 150, 242 150'
 		);
 		expect(routeConnection({ ...base, curve: 'ortho' }, components).d).toBe(
-			'M 0 100 H -12 V 118 H 254 V 150 H 242'
+			'M 0 100 H -12 V 132 H 254 V 150 H 242'
 		);
 		expect(() =>
 			routeConnection(
@@ -391,7 +397,9 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			maxX: 334.65,
 			maxY: 100
 		});
-		expect(labelRoutes[1]!.d).toContain('H 265.35');
+		/* The vertical trace keeps clear of the label box: it passes one lattice
+		   column left of the label rather than through it. */
+		expect(labelRoutes[1]!.d).toContain('H 264 V 95');
 
 		const separated = routeConnections(
 			[
@@ -470,7 +478,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(reversedVertical[1]!.d).toBe('M 250 191 V 125 A 5 5 0 0 1 250 115 V 49');
 	});
 
-	test('deduplicates coincident crossings and orders multiple horizontal bridge jumps', () => {
+	test('deduplicates coincident crossings and bridges each vertical run once', () => {
 		const horizontalLeft: PortComponent = {
 			kind: 'port',
 			id: 'LEFT',
@@ -524,24 +532,26 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			to: { componentId: horizontalRight.id, port: 'in' }
 		};
 		const routed = routeConnections([verticalA, verticalA, verticalB, horizontal], components);
-		expect(routed[3]!.d).toBe('M 92 120 H 175 A 5 5 0 0 1 185 120 H 315 A 5 5 0 0 1 325 120 H 408');
-		expect(routed[3]!.d.match(/ A /g)).toHaveLength(2);
+		/* Bridges sit on vertical runs: the horizontal wire stays straight, and a
+		   duplicated vertical wire is bridged once per run, not once per copy. */
+		expect(routed[3]!.d).toBe('M 92 120 H 408');
+		expect(routed[0]!.d).toBe('M 180 49 V 115 A 5 5 0 0 0 180 125 V 191');
+		expect(routed[1]!.d).toBe(routed[0]!.d);
+		expect(routed[2]!.d).toBe('M 320 49 V 115 A 5 5 0 0 0 320 125 V 191');
+		for (const route of routed.slice(0, 3)) expect(route.d.match(/ A /g)).toHaveLength(1);
 
 		const reversed = routeConnections(
 			[
-				verticalA,
-				{
-					...horizontal,
-					from: horizontal.to,
-					to: horizontal.from
-				}
+				{ ...verticalA, from: verticalA.to, to: verticalA.from },
+				{ ...horizontal, from: horizontal.to, to: horizontal.from }
 			],
 			components
 		);
-		expect(reversed[1]!.d).toBe('M 408 120 H 185 A 5 5 0 0 0 175 120 H 92');
+		expect(reversed[0]!.d).toBe('M 180 191 V 125 A 5 5 0 0 1 180 115 V 49');
+		expect(reversed[1]!.d).toBe('M 408 120 H 92');
 	});
 
-	test('shrinks adjacent bridges instead of overlapping or reversing the path', () => {
+	test('shrinks a bridge beside a parallel wire instead of bulging into it', () => {
 		const terminal = (
 			id: string,
 			x: number,
@@ -556,8 +566,11 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		const bottomA = terminal('BA', 300, 220, 'up');
 		const topB = terminal('TB', 304, 20, 'down');
 		const bottomB = terminal('BB', 304, 220, 'up');
+		/* Close beside the left wire, but well below the crossing. */
+		const topC = terminal('TC', 296, 170, 'down');
+		const bottomC = terminal('BC', 296, 320, 'up');
 		const components = new Map(
-			[left, right, topA, bottomA, topB, bottomB].map((component) => [component.id, component])
+			[left, right, topA, bottomA, topB, bottomB, topC, bottomC].map((component) => [component.id, component])
 		);
 		const endpointOnlyMap = {
 			get: (id: string) => components.get(id),
@@ -576,15 +589,17 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			[
 				connection('TA', 'out', 'BA', 'in'),
 				connection('TB', 'out', 'BB', 'in'),
-				connection('L', 'out', 'R', 'in')
+				connection('L', 'out', 'R', 'in'),
+				connection('TC', 'out', 'BC', 'in')
 			],
 			endpointOnlyMap
 		);
-		expect(routes[2]!.d).toContain('A 2 2');
-		expect(routes[2]!.d).not.toContain('A 5 5');
-		expect(routes[2]!.d).toBe(
-			'M -8 120 H 298 A 2 2 0 0 1 302 120 A 2 2 0 0 1 306 120 H 708'
-		);
+		/* The left wire bulges into open space at full radius; the right one may
+		   only use half the gap to its neighbour, so the arcs never touch. */
+		expect(routes[2]!.d).toBe('M -8 120 H 708');
+		expect(routes[0]!.d).toBe('M 300 62 V 115 A 5 5 0 0 0 300 125 V 262');
+		expect(routes[1]!.d).toBe('M 304 62 V 118 A 2 2 0 0 0 304 122 V 262');
+		expect(routes[1]!.points).toContainEqual({ x: 302, y: 120 });
 	});
 
 	test('rejects subpixel separate-net contacts that cannot render a bridge', () => {
@@ -638,7 +653,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 				connection('L', 'out', 'R', 'in')
 			],
 			endpointOnlyMap
-		)).toThrow(/No orthogonal route|Wire crossings are too close/);
+		)).toThrow(/sit too close to route apart/);
 		expect(() => routeConnections(
 			[
 				connection('L1', 'out', 'R1', 'in'),
@@ -646,10 +661,10 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 				connection('T', 'out', 'B', 'out')
 			],
 			endpointOnlyMap
-		)).toThrow(/No orthogonal route|Wire crossings are too close/);
+		)).toThrow(/sit too close to route apart/);
 	});
 
-	test('rejects non-orthogonal separate-net crossings and permits shared-net crossings', () => {
+	test('rejects crossings between drawn wires, routes ortho around them, and permits shared-net crossings', () => {
 		const left: PortComponent = { kind: 'port', id: 'L', label: 'L', x: 50, y: 120, color: token, line: 1 };
 		const right: PortComponent = { ...left, id: 'R', x: 450 };
 		const top: PortComponent = { ...left, id: 'T', x: 250, y: 20 };
@@ -670,9 +685,12 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			to: { componentId: 'B', port: 'out' },
 			curve: 'bezier' as const
 		};
-		expect(() => routeConnections([base, bezier], components)).toThrow(
+		/* Drawn wires are fixed copper: two of them may not cross, and an
+		   orthogonal wire of another net routes around them whatever the order. */
+		expect(() => routeConnections([{ ...base, curve: 'line' }, bezier], components)).toThrow(
 			/Separate nets touch or cross/
 		);
+		expect(routeConnections([base, bezier], components)[0]!.d).toBe('M 92 120 H 104 V -20 H 396 V 120 H 408');
 		const routed = routeConnections(
 			[
 				{ ...base, net: 'SHARED' },
@@ -773,13 +791,13 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 				[connection('L1', 'R1', 'ortho'), connection('TE', 'BE', 'ortho')],
 				endpointOnlyMap
 			)
-		).toThrow(/Separate nets touch|Separate nets touch or overlap/);
+		).toThrow('Line 30: R1.in and TE.out sit too close to route apart as separate nets');
 		expect(() =>
 			routeConnections(
 				[connection('TE', 'BE', 'ortho'), connection('L1', 'R1', 'ortho')],
 				endpointOnlyMap
 			)
-		).toThrow(/Separate nets touch|Separate nets touch or overlap/);
+		).toThrow('Line 30: TE.out and R1.in sit too close to route apart as separate nets');
 		expect(() =>
 			routeConnections([connection('DLA', 'DLB'), connection('DLC', 'DLD')], endpointOnlyMap)
 		).not.toThrow();
@@ -798,7 +816,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(mixed[1]!.d).toContain(' A ');
 	});
 
-	test('rejects an unrenderable horizontal cluster of otherwise bridgeable crossings', () => {
+	test('rejects crossings packed too tightly for distinct bridge arcs', () => {
 		const horizontalLeft: PortComponent = {
 			kind: 'port', id: 'HL', label: 'HL', x: 0, y: 120, color: token, line: 1
 		};
@@ -808,10 +826,10 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		});
 		const topA = vertical('TA', 300, 20);
 		const bottomA = vertical('BA', 300, 220);
-		const topB = vertical('TB', 300.0004, 20);
-		const bottomB = vertical('BB', 300.0004, 220);
+		const nearLeft: PortComponent = { ...horizontalLeft, id: 'NL', y: 120.001 };
+		const nearRight: PortComponent = { ...horizontalRight, id: 'NR', y: 120.001 };
 		const components = new Map(
-			[horizontalLeft, horizontalRight, topA, bottomA, topB, bottomB].map(
+			[horizontalLeft, horizontalRight, topA, bottomA, nearLeft, nearRight].map(
 				(component) => [component.id, component] as const
 			)
 		);
@@ -836,9 +854,9 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(() =>
 			routeConnections(
 				[
-					connection('TA', 'target', 'BA', 'control'),
-					connection('TB', 'target', 'BB', 'control'),
-					connection('HL', 'out', 'HR', 'in')
+					connection('HL', 'out', 'HR', 'in'),
+					connection('NL', 'out', 'NR', 'in'),
+					connection('TA', 'target', 'BA', 'control')
 				],
 				endpointOnlyMap
 			)
@@ -902,7 +920,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		);
 	});
 
-	test('elides redundant horizontal commands when bridge arcs consume both segment edges', () => {
+	test('keeps a horizontal wire to one command when crossings sit at both of its ends', () => {
 		const lookup = new Map<string, SchematicComponent>();
 		const terminal = (
 			id: string,
@@ -937,9 +955,13 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			],
 			endpointOnlyMap
 		);
-		expect(routes[2]!.d).toBe(
-			'M 92 120 A 2 2 0 0 1 96 120 H 404 A 2 2 0 0 1 408 120'
-		);
+		/* Bridges belong to the vertical runs, so the horizontal wire keeps one
+		   command even when crossings sit right at both of its ends. */
+		expect(routes.map((route) => route.d)).toEqual([
+			'M 94 62 V 115 A 5 5 0 0 0 94 125 V 262',
+			'M 406 62 V 115 A 5 5 0 0 0 406 125 V 262',
+			'M 92 120 H 408'
+		]);
 	});
 
 	test('uses bounded A-star for staggered multi-channel obstacle mazes', () => {
@@ -1182,8 +1204,8 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			outputs: 1,
 			standard: 'ieee'
 		};
-		const malformedTrace: SchematicConnection = {
-			from: { componentId: 'G1', port: 'in99' },
+		const trace: SchematicConnection = {
+			from: { componentId: 'G1', port: 'in1' },
 			to: { componentId: 'G1', port: 'out' },
 			color: token,
 			curve: 'bezier',
@@ -1191,8 +1213,15 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			markerEnd: 'none',
 			line: 8
 		};
+		/* A route handed in by the caller is checked point by point, control
+		   points included. */
+		const outside: RoutedConnection = {
+			curve: 'bezier',
+			d: 'M 60 100 C 100 -40, 100 240, 140 100',
+			points: [{ x: 60, y: 100 }, { x: 100, y: -40 }, { x: 100, y: 240 }, { x: 140, y: 100 }]
+		};
 		expect(() =>
-			validateDocumentGeometry({ components: [gate], connections: [malformedTrace] }, smallFence)
+			validateDocumentGeometry({ components: [gate], connections: [trace] }, smallFence, [outside])
 		).toThrow('Line 8: Connection trace exceeds the declared schematic bounds.');
 	});
 
@@ -1240,5 +1269,56 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(() => parseSchematic('resistor:R3 "clipped" at (45, 60) #amber', edgeFence)).toThrow(
 			/geometry exceeds/
 		);
+	});
+});
+
+describe('public layout helpers', () => {
+	const color = token;
+
+	test('keep the 0.x numbers', () => {
+		expect([0, 1, 2].map((index) => distributedCoordinate(index, 3, 40))).toEqual([-10, 0, 10]);
+		expect(distributedCoordinate(0, 1, 40)).toBe(0);
+		const gate: ClassicalGateComponent = { kind: 'and', id: 'G', label: 'G', x: 0, y: 0, color, line: 1, inputs: 5, outputs: 2, standard: 'ieee' };
+		expect(classicalGateHeight(gate)).toBe(80);
+		expect(classicalGateHeight({ ...gate, inputs: 1, outputs: 1 })).toBe(48);
+		expect(quantumGateDimensions({ kind: 'hadamard', id: 'Q', label: 'H', x: 0, y: 0, color, line: 1 } as never)).toEqual({ bodyWidth: 50, bodyHeight: 50, stubExtent: 48 });
+		expect(quantumGateDimensions({ kind: 'qgate', id: 'Q', label: 'Rot', x: 0, y: 0, color, line: 1, parameter: 'theta/2', phase: 'pi' } as never)).toEqual({
+			bodyWidth: 69,
+			bodyHeight: 80,
+			stubExtent: 57.5
+		});
+	});
+
+	test('place a connector label at the half-length point of a bent route', () => {
+		const fence = { bounds: { width: 600, height: 400 }, title: 'label' } as const;
+		const result = compileSchematic('port:A "A" at (60,100) #blue\nport:B "B" at (150,300) #blue\nA.out -> B.in #blue [ortho label="bus"]', fence);
+		const connection = result.document.connections[0]!;
+		const [route] = routeConnections(result.document.connections, new Map(result.document.components.map((component) => [component.id, component])), fence.bounds);
+		/* The half-length point lies past the first, short segment. */
+		const point = connectionLabelPoint(route!);
+		expect(route!.points[1]).not.toEqual(point);
+		const rectangle = connectionLabelRectangle(connection, route!)!;
+		expect(rectangle.maxY).toBe(point.y);
+		expect((rectangle.minX + rectangle.maxX) / 2).toBe(point.x);
+		expect(connectionLabelRectangle({ ...connection, label: undefined } as never, route!)).toBeUndefined();
+	});
+});
+
+describe('container overlaps', () => {
+	const fence = { bounds: { width: 900, height: 600 }, title: 'containers' } as const;
+
+	test('a body half inside a container still overlaps it', () => {
+		expect(() =>
+			parseSchematic('package:P "Package" at (350,260) #slate [width=500 height=360]\nresistor:R1 "R" at (100,260) #amber', fence)
+		).toThrow(/overlaps/);
+	});
+
+	test('a component port may straddle the edge only with its centre on the container', () => {
+		expect(() =>
+			parseSchematic('component:C "C" at (350,260) #slate [width=500 height=360]\ncomponent-port:CP "Port" at (100,260) #blue', fence)
+		).not.toThrow();
+		expect(() =>
+			parseSchematic('component:C "C" at (350,260) #slate [width=500 height=360]\ncomponent-port:CP "Port" at (95,260) #blue', fence)
+		).toThrow(/overlaps/);
 	});
 });

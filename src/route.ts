@@ -40,6 +40,8 @@ export const PITCH = 12_000;
 const BEND = 100_000;
 /** Cost of one crossing, used only by the bounded second search. */
 const CROSS = 48_000;
+/** Paths crossing more nets than this are taken as they are: their crossings are structural, not a detour away. */
+const MAX_AVOIDABLE_CROSSINGS = 2;
 /** Price of contact with another net in the first negotiated iteration. */
 const CONTACT = 2_000_000;
 /** History added at a contested location per iteration. */
@@ -93,6 +95,8 @@ export interface RouterInput {
 	readonly fixed: readonly RouterFixed[];
 	/** Iteration budget; `1` forbids contact outright and never negotiates. */
 	readonly attempts: number;
+	/** Search states one search may expand; {@link MAX_ROUTER_STATES} by default. */
+	readonly states?: number;
 }
 
 export interface RoutedWire {
@@ -118,6 +122,70 @@ interface Copper {
 	readonly net: number;
 	readonly unit: number;
 	readonly stub: boolean;
+	/** Set when the unit is torn up; the bucket index keeps dead copper. */
+	dead?: boolean;
+}
+
+/** Side of one bucket cell, in milli-units. */
+const CELL = 256_000;
+const CELL_OFFSET = 2 ** 20;
+
+/**
+ * Uniform-grid buckets over rectangles, so a search reads only what lies in
+ * its window rather than every obstacle and wire in the document.
+ *
+ * A query returns items in insertion order, so callers see exactly the order a
+ * full scan would have.
+ */
+class Buckets<T> {
+	private readonly cells = new Map<number, number[]>();
+	readonly items: T[] = [];
+	private stamps = new Uint32Array(64);
+	private epoch = 0;
+
+	add(item: T, rect: IRect): void {
+		const id = this.items.push(item) - 1;
+		if (id >= this.stamps.length) {
+			const grown = new Uint32Array(this.stamps.length * 2);
+			grown.set(this.stamps);
+			this.stamps = grown;
+		}
+		this.visit(rect, (key) => {
+			const bucket = this.cells.get(key);
+			if (bucket === undefined) this.cells.set(key, [id]);
+			else bucket.push(id);
+		});
+	}
+
+	query(rect: IRect): T[] {
+		this.epoch += 1;
+		const ids: number[] = [];
+		this.visit(rect, (key) => {
+			const bucket = this.cells.get(key);
+			if (bucket === undefined) return;
+			for (const id of bucket) {
+				if (this.stamps[id] === this.epoch) continue;
+				this.stamps[id] = this.epoch;
+				ids.push(id);
+			}
+		});
+		ids.sort((left, right) => left - right);
+		return ids.map((id) => this.items[id]!);
+	}
+
+	private visit(rect: IRect, cell: (key: number) => void): void {
+		const x1 = Math.floor(rect.maxX / CELL);
+		const y0 = Math.floor(rect.minY / CELL);
+		const y1 = Math.floor(rect.maxY / CELL);
+		for (let x = Math.floor(rect.minX / CELL); x <= x1; x += 1) {
+			for (let y = y0; y <= y1; y += 1) cell((x + CELL_OFFSET) * 2 ** 21 + y + CELL_OFFSET);
+		}
+	}
+}
+
+/** The bounding rectangle of a segment. */
+function spanOf(a: IPoint, b: IPoint): IRect {
+	return { minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y), maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y) };
 }
 
 /** A group grown as one tree, or one wire routed alone. */
@@ -175,7 +243,6 @@ const OTHER_H = 1;
 const OTHER_V = 2;
 const OTHER_END = 4;
 const OWN = 8;
-const OWN_JUNCTION = 16;
 const AVOID = 32;
 
 /** Reusable search scratch, grown to the largest window and never shrunk. */
@@ -290,10 +357,6 @@ class Scratch {
 		return top;
 	}
 
-	known(state: number): number {
-		return this.stamp[state] === this.epoch ? this.g[state]! : Number.POSITIVE_INFINITY;
-	}
-
 	/**
 	 * Whether reaching `state` at cost `g` with `crossings` beats what is known.
 	 * Crossings decide only between equally cheap arrivals: as a cost they would
@@ -322,15 +385,19 @@ class Router {
 	readonly specialsY: Float64Array;
 	readonly units: Unit[] = [];
 	readonly unitOf: Int32Array;
-	copper: Copper[] = [];
+	/** Every piece of copper ever laid, dead or alive. */
+	readonly copper = new Buckets<Copper>();
+	/** Each unit's live copper, stubs included. */
+	readonly unitCopper: Copper[][] = [];
+	readonly obstacles = new Buckets<RouterObstacle>();
+	readonly fixed = new Buckets<RouterFixed>();
+	readonly labelIndex = new Buckets<RouterObstacle>();
 	readonly routes: (RoutedWire | undefined)[];
 	readonly labels: (RouterObstacle | undefined)[];
 	readonly history = new Map<string, number>();
 	readonly canvas: IRect;
 	/** Contact price for soft searches; `Infinity` while contact is forbidden. */
 	contact = Number.POSITIVE_INFINITY;
-	/** Whether the current search hit a contact it had to pay for. */
-	touched = false;
 
 	constructor(readonly input: RouterInput) {
 		const xs: number[] = [];
@@ -371,7 +438,25 @@ class Router {
 		this.routes = new Array(input.wires.length).fill(undefined);
 		this.labels = new Array(input.wires.length).fill(undefined);
 		this.unitOf = new Int32Array(input.wires.length);
+		for (const obstacle of input.obstacles) this.obstacles.add(obstacle, obstacle.rect);
+		for (const piece of input.fixed) this.fixed.add(piece, spanOf(piece.a, piece.b));
 		this.buildUnits();
+	}
+
+	/** Lay one piece of copper. */
+	private lay(piece: Copper): void {
+		this.copper.add(piece, spanOf(piece.a, piece.b));
+		this.unitCopper[piece.unit]!.push(piece);
+	}
+
+	/** Live copper whose bounding box meets `rect`. */
+	copperIn(rect: IRect): Copper[] {
+		return this.copper.query(rect).filter((piece) => piece.dead !== true);
+	}
+
+	/** Live labels whose rectangle meets `rect`. */
+	private labelsIn(rect: IRect): RouterObstacle[] {
+		return this.labelIndex.query(rect).filter((label) => this.labels[-1 - label.owner] === label);
 	}
 
 	/** Partition wires into trees and lone wires, ordered by geometry alone. */
@@ -416,6 +501,7 @@ class Router {
 		);
 		for (const [index, draft] of drafts.entries()) {
 			this.units.push({ index, net: draft.net, wires: draft.wires, tree: draft.tree, key: draft.key });
+			this.unitCopper.push([]);
 			for (const wire of draft.wires) this.unitOf[wire] = index;
 		}
 	}
@@ -431,7 +517,7 @@ class Router {
 					if (seen.has(key)) continue;
 					seen.add(key);
 					if (terminal.point.x === terminal.escape.x && terminal.point.y === terminal.escape.y) continue;
-					this.copper.push({ a: terminal.point, b: terminal.escape, net: unit.net, unit: unit.index, stub: true });
+					this.lay({ a: terminal.point, b: terminal.escape, net: unit.net, unit: unit.index, stub: true });
 				}
 			}
 		}
@@ -439,7 +525,12 @@ class Router {
 
 	/** Tear up everything a unit routed, keeping its stubs. */
 	ripUp(unit: Unit): void {
-		this.copper = this.copper.filter((piece) => piece.stub || piece.unit !== unit.index);
+		const kept: Copper[] = [];
+		for (const piece of this.unitCopper[unit.index]!) {
+			if (piece.stub) kept.push(piece);
+			else piece.dead = true;
+		}
+		this.unitCopper[unit.index] = kept;
 		for (const index of unit.wires) {
 			this.routes[index] = undefined;
 			this.labels[index] = undefined;
@@ -460,17 +551,20 @@ class Router {
 		const toward = (from: RouterTerminal, at: IPoint) =>
 			Math.sign(from.escape.x - from.point.x) === Math.sign(at.x - from.point.x) && Math.sign(from.escape.y - from.point.y) === Math.sign(at.y - from.point.y);
 		if (!toward(wire.from, b) || !toward(wire.to, a)) return undefined;
-		for (const obstacle of this.input.obstacles) {
-			if (obstacle.kind === 'body' ? true : obstacle.owner !== wire.from.owner && obstacle.owner !== wire.to.owner) {
-				if (obstacle.kind === 'label' && (obstacle.owner === wire.from.owner || obstacle.owner === wire.to.owner)) continue;
+		/* Once negotiation has priced any location, the search decides: a shortcut
+		   that ignored history could retake a contested track forever. */
+		if (this.history.size > 0) return undefined;
+		const span = spanOf(a, b);
+		for (const obstacle of this.obstacles.query(span)) {
+			if (obstacle.kind === 'body' || (obstacle.owner !== wire.from.owner && obstacle.owner !== wire.to.owner)) {
 				if (axisSegmentEntersRect(a, b, obstacle.rect)) return undefined;
 			}
 		}
-		for (const label of this.labels) if (label !== undefined && axisSegmentEntersRect(a, b, label.rect)) return undefined;
-		for (const piece of this.copper) {
+		for (const label of this.labelsIn(span)) if (axisSegmentEntersRect(a, b, label.rect)) return undefined;
+		for (const piece of this.copperIn(span)) {
 			if (piece.net !== unit.net && segmentContact(a, b, piece.a, piece.b) !== undefined) return undefined;
 		}
-		for (const fixed of this.input.fixed) {
+		for (const fixed of this.fixed.query(span)) {
 			if (fixed.net !== unit.net && segmentContact(a, b, fixed.a, fixed.b) !== undefined) return undefined;
 		}
 		return [a, b];
@@ -544,7 +638,10 @@ class Router {
 		}
 		for (const index of loops) {
 			const wire = this.input.wires[index]!;
+			/* Both ends already sit on the tree, whose own copper never blocks a point
+			   search, so a path between them always exists. */
 			const path = this.search(unit, [wire.from.escape], wire.to.escape, [], index, 'point');
+			/* v8 ignore next */
 			if (path === undefined) return index;
 			this.commit(index, path, false, false);
 		}
@@ -554,17 +651,16 @@ class Router {
 	/** Every point on a unit's routed copper is a legal place to branch from. */
 	private treeSources(unit: Unit, connected: ReadonlySet<string>): IPoint[] {
 		const points: IPoint[] = [];
-		for (const piece of this.copper) {
-			if (piece.unit === unit.index && (!piece.stub || connected.has(pointKey(piece.a)))) points.push(piece.a, piece.b);
+		for (const piece of this.unitCopper[unit.index]!) {
+			if (!piece.stub || connected.has(pointKey(piece.a))) points.push(piece.a, piece.b);
 		}
 		return points;
 	}
 
 	/** Stubs of terminals not yet joined, which a branch must not run into. */
 	private unconnectedStubs(unit: Unit, connected: ReadonlySet<string>, target: RouterTerminal): Copper[] {
-		return this.copper.filter(
+		return this.unitCopper[unit.index]!.filter(
 			(piece) =>
-				piece.unit === unit.index &&
 				piece.stub &&
 				!connected.has(pointKey(piece.a)) &&
 				!(piece.a.x === target.point.x && piece.a.y === target.point.y)
@@ -581,7 +677,7 @@ class Router {
 	private commit(index: number, path: readonly IPoint[], junctionAtStart: boolean, junctionAtEnd: boolean): void {
 		const unit = this.units[this.unitOf[index]!]!;
 		for (let step = 1; step < path.length; step += 1) {
-			this.copper.push({ a: path[step - 1]!, b: path[step]!, net: unit.net, unit: unit.index, stub: false });
+			this.lay({ a: path[step - 1]!, b: path[step]!, net: unit.net, unit: unit.index, stub: false });
 		}
 		const wire = this.input.wires[index]!;
 		let points: IPoint[];
@@ -595,7 +691,12 @@ class Router {
 		}
 		this.routes[index] = junctionAtStart ? { points, junction: points[0]! } : { points };
 		const rect = wire.label?.(points);
-		this.labels[index] = rect === undefined ? undefined : { owner: -1 - index, kind: 'label', rect };
+		if (rect === undefined) this.labels[index] = undefined;
+		else {
+			const label: RouterObstacle = { owner: -1 - index, kind: 'label', rect };
+			this.labels[index] = label;
+			this.labelIndex.add(label, rect);
+		}
 	}
 
 	/**
@@ -632,12 +733,20 @@ class Router {
 			maxY: Math.max(box.maxY, this.canvas.maxY)
 		};
 		let area = window;
-		let found = this.searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, MAX_ROUTER_STATES);
-		if (found === undefined && (window.minX !== whole.minX || window.minY !== whole.minY || window.maxX !== whole.maxX || window.maxY !== whole.maxY)) {
+		let found = this.searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, this.input.states ?? MAX_ROUTER_STATES);
+		/* Nothing in the window: widen to the whole canvas before giving up. */
+		if (found === undefined) {
 			area = whole;
-			found = this.searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, MAX_ROUTER_STATES);
+			found = this.searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, this.input.states ?? MAX_ROUTER_STATES);
 		}
 		if (found === undefined) return undefined;
+		/* A path that pays history or contact may be dearer than a way round the
+		   window could not see; during negotiation that is the whole point. */
+		if (found.priced) {
+			area = whole;
+			const wide = this.searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, 0, this.input.states ?? MAX_ROUTER_STATES)!;
+			if (wide.cost < found.cost) found = wide;
+		}
 		/*
 		 * A crossing is legal but not free. Priced into the first search it would
 		 * make the search exhaust every crossing-free state before accepting the
@@ -646,8 +755,8 @@ class Router {
 		 * avoids a bridge is found, and an unavoidable crossing costs one bounded
 		 * look rather than a flood.
 		 */
-		if (found.crossings > 0) {
-			const better = this.searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, CROSS, 2_000 + 4 * found.expanded);
+		if (found.crossings > 0 && found.crossings <= MAX_AVOIDABLE_CROSSINGS) {
+			const better = this.searchWindow(unit, area, sources, target, avoid, wireIndex, mode, connected, CROSS, 1_000 + found.expanded);
 			if (better !== undefined && better.crossings < found.crossings) return better.path;
 		}
 		return found.path;
@@ -664,7 +773,7 @@ class Router {
 		connected: ReadonlySet<string>,
 		crossCost: number,
 		cap: number
-	): { path: IPoint[]; crossings: number; expanded: number } | undefined {
+	): { path: IPoint[]; crossings: number; expanded: number; cost: number; priced: boolean } | undefined {
 		const xs = axisCoordinates(this.specialsX, window.minX, window.maxX);
 		const ys = axisCoordinates(this.specialsY, window.minY, window.maxY);
 		const width = xs.length;
@@ -689,14 +798,12 @@ class Router {
 			relaxed.add(wire.from.owner);
 			relaxed.add(wire.to.owner);
 		}
-		for (const obstacle of this.input.obstacles) {
-			if (obstacle.kind !== 'expanded' || relaxed.has(obstacle.owner)) continue;
-			for (const wire of unitWires) {
-				for (const terminal of [wire.from, wire.to]) {
+		for (const wire of unitWires) {
+			for (const terminal of [wire.from, wire.to]) {
+				const at = terminal.escape;
+				for (const obstacle of this.obstacles.query({ minX: at.x, minY: at.y, maxX: at.x, maxY: at.y })) {
 					const r = obstacle.rect;
-					if (terminal.escape.x > r.minX && terminal.escape.x < r.maxX && terminal.escape.y > r.minY && terminal.escape.y < r.maxY) {
-						relaxed.add(obstacle.owner);
-					}
+					if (obstacle.kind === 'expanded' && at.x > r.minX && at.x < r.maxX && at.y > r.minY && at.y < r.maxY) relaxed.add(obstacle.owner);
 				}
 			}
 		}
@@ -718,12 +825,12 @@ class Router {
 			const cc1 = Math.min(width - 2, lowerBound(xs, rect.maxX) - 1);
 			for (let r = rr0; r <= rr1; r += 1) for (let c = cc0; c <= cc1; c += 1) s.blockH[r * width + c] = 1;
 		};
-		for (const obstacle of this.input.obstacles) {
+		for (const obstacle of this.obstacles.query(window)) {
 			if (obstacle.kind === 'body') {
 				if (relaxed.has(obstacle.owner)) block(obstacle.rect);
 			} else if (!relaxed.has(obstacle.owner)) block(obstacle.rect);
 		}
-		for (const label of this.labels) if (label !== undefined) block(label.rect);
+		for (const label of this.labelsIn(window)) block(label.rect);
 
 		/* Copper of other nets: occupied edges, and how each touched node is used.
 		   In tree mode the unit's own joined copper is marked too, as branch points;
@@ -768,24 +875,19 @@ class Router {
 				}
 			}
 		};
-		for (const piece of this.copper) {
-			const minX = Math.min(piece.a.x, piece.b.x);
-			const maxX = Math.max(piece.a.x, piece.b.x);
-			const minY = Math.min(piece.a.y, piece.b.y);
-			const maxY = Math.max(piece.a.y, piece.b.y);
-			if (maxX < window.minX || minX > window.maxX || maxY < window.minY || minY > window.maxY) continue;
+		const outside = (rect: IRect): boolean => rect.maxX < window.minX || rect.minX > window.maxX || rect.maxY < window.minY || rect.minY > window.maxY;
+		for (const piece of this.copperIn(window)) {
+			if (outside(spanOf(piece.a, piece.b))) continue;
 			if (piece.net !== unit.net) mark(piece, false, false);
 			else if (mode === 'tree' && piece.unit === unit.index && (!piece.stub || connected.has(pointKey(piece.a)))) mark(piece, true, false);
 		}
 		for (const piece of avoid) mark(piece, false, true);
 		/* Fixed diagonal wires of other nets: any lattice edge touching one is occupied. */
-		for (const fixed of this.input.fixed) {
+		for (const fixed of this.fixed.query(window)) {
 			if (fixed.net === unit.net) continue;
-			const minX = Math.min(fixed.a.x, fixed.b.x);
-			const maxX = Math.max(fixed.a.x, fixed.b.x);
-			const minY = Math.min(fixed.a.y, fixed.b.y);
-			const maxY = Math.max(fixed.a.y, fixed.b.y);
-			if (maxX < window.minX || minX > window.maxX || maxY < window.minY || minY > window.maxY) continue;
+			const span = spanOf(fixed.a, fixed.b);
+			if (outside(span)) continue;
+			const { minX, minY, maxX, maxY } = span;
 			const c0 = Math.max(0, lowerBound(xs, minX) - 1);
 			const c1 = Math.min(width - 1, lowerBound(xs, maxX + 1));
 			const r0 = Math.max(0, lowerBound(ys, minY) - 1);
@@ -816,11 +918,8 @@ class Router {
 		const targetCell = targetRow * width + targetCol;
 		const startCells: number[] = [];
 		if (mode === 'point') {
-			for (const source of sources) {
-				const c = col(source.x);
-				const r = row(source.y);
-				if (c >= 0 && r >= 0) startCells.push(r * width + c);
-			}
+				/* Point sources are escape points: lattice specials inside every window. */
+			for (const source of sources) startCells.push(row(source.y) * width + col(source.x));
 		}
 		if (mode === 'tree') {
 			/* Pins of the unit: a junction held two pitches off them, so its dot can
@@ -841,8 +940,7 @@ class Router {
 				const x = xs[c]!;
 				const y = ys[r]!;
 				const crowded = pins.some((pin) => Math.abs(pin.x - x) + Math.abs(pin.y - y) < 2 * PITCH);
-				if (degree >= 3) s.node[cell] = s.node[cell]! | (OWN_JUNCTION);
-				else if (!crowded) startCells.push(cell);
+				if (degree < 3 && !crowded) startCells.push(cell);
 			}
 		}
 
@@ -857,9 +955,7 @@ class Router {
 			return Math.abs(dx) + Math.abs(dy) + bends * BEND;
 		};
 		for (const cell of startCells) {
-			if ((s.node[cell]! & OWN_JUNCTION) !== 0) continue;
 			const state = cell * 3;
-			if (s.known(state) === 0) continue;
 			s.relax(state, -1, 0);
 			s.push(state, 0, heuristic(cell, 0));
 		}
@@ -869,7 +965,8 @@ class Router {
 		while (s.size > 0) {
 			const g = s.heapG[0]!;
 			const state = s.pop();
-			if (s.known(state) !== g) continue;
+			/* Every pushed state was relaxed first; a stale entry has been beaten since. */
+			if (s.g[state] !== g) continue;
 			const cell = (state / 3) | 0;
 			if (cell === targetCell) {
 				found = state;
@@ -920,26 +1017,28 @@ class Router {
 				}
 				/* Never run along the unit's own copper, or into an unjoined stub. */
 				if (occ === 2) continue;
-				let cost = g + length;
+				/* Contested locations cost their history to every net, touching or not
+				   (PathFinder): a net with somewhere else to go leaves them to the nets
+				   that have nowhere else. */
+				let cost = g + length + s.history[next]!;
 				let crossed = s.crossings[state]!;
 				let penalty = 0;
-				if (occ === 1) penalty += contact + s.history[cell]!;
+				if (occ === 1) penalty += contact;
 				if (direction !== 0 && direction !== nextDirection) {
 					cost += BEND;
-					if ((flags & (OTHER_H | OTHER_V | OTHER_END)) !== 0) penalty += contact + s.history[cell]!;
+					if ((flags & (OTHER_H | OTHER_V | OTHER_END)) !== 0) penalty += contact;
 				} else if (direction === nextDirection) {
-					if ((flags & OTHER_END) !== 0) penalty += contact + s.history[cell]!;
+					if ((flags & OTHER_END) !== 0) penalty += contact;
 					else if ((nextDirection === 1 && (flags & OTHER_V) !== 0) || (nextDirection === 2 && (flags & OTHER_H) !== 0)) {
 						crossed += 1;
 						cost += crossCost;
 					}
 				} else if ((flags & (OTHER_H | OTHER_V | OTHER_END)) !== 0) {
-					penalty += contact + s.history[cell]!;
+					penalty += contact;
 				}
 				const nextFlags = s.node[next]!;
 				if ((nextFlags & AVOID) !== 0) continue;
-				if ((nextFlags & OWN_JUNCTION) !== 0) continue;
-				if (next === targetCell && (nextFlags & (OTHER_H | OTHER_V | OTHER_END)) !== 0) penalty += contact + s.history[next]!;
+				if (next === targetCell && (nextFlags & (OTHER_H | OTHER_V | OTHER_END)) !== 0) penalty += contact;
 				if (penalty > 0) {
 					if (penalty === Number.POSITIVE_INFINITY) continue;
 					cost += penalty;
@@ -957,16 +1056,22 @@ class Router {
 			const c = cell % width;
 			reversed.push({ x: xs[c]!, y: ys[(cell - c) / width]! });
 		}
-		return { path: compact(reversed.reverse()), crossings: s.crossings[found]!, expanded };
+		const path = compact(reversed.reverse());
+		/* Whatever the path cost beyond its length, bends and crossings was
+		   history or contact. */
+		let plain = Math.max(0, path.length - 2) * BEND + s.crossings[found]! * crossCost;
+		for (let step = 1; step < path.length; step += 1) plain += Math.abs(path[step]!.x - path[step - 1]!.x) + Math.abs(path[step]!.y - path[step - 1]!.y);
+		const cost = s.g[found]!;
+		return { path, crossings: s.crossings[found]!, expanded, cost, priced: cost > plain };
 	}
 
 	/** Find every location where copper of two different nets touches. */
-	contacts(): Map<number, IPoint> {
-		const involved = new Map<number, IPoint>();
+	contacts(): Set<number> {
+		const involved = new Set<number>();
 		const horizontal = new Map<number, Copper[]>();
 		const vertical = new Map<number, Copper[]>();
-		for (const piece of this.copper) {
-			if (piece.a.x === piece.b.x && piece.a.y === piece.b.y) continue;
+		const live = this.copper.items.filter((piece) => piece.dead !== true);
+		for (const piece of live) {
 			const isH = piece.a.y === piece.b.y;
 			const map = isH ? horizontal : vertical;
 			const key = isH ? piece.a.y : piece.a.x;
@@ -975,8 +1080,8 @@ class Router {
 			else list.push(piece);
 		}
 		const flag = (left: Copper, right: Copper, at: IPoint): void => {
-			if (!involved.has(left.unit)) involved.set(left.unit, at);
-			if (!involved.has(right.unit)) involved.set(right.unit, at);
+			involved.add(left.unit);
+			involved.add(right.unit);
 			const key = pointKey(at);
 			this.contested.add(key);
 		};
@@ -1000,7 +1105,7 @@ class Router {
 		}
 		/* Perpendicular contact that is not a clean crossing: an end or corner of one
 		   wire lying on another. */
-		for (const piece of this.copper) {
+		for (const piece of live) {
 			const isH = piece.a.y === piece.b.y;
 			for (const end of [piece.a, piece.b]) {
 				const others = (isH ? vertical : horizontal).get(isH ? end.x : end.y);
@@ -1014,10 +1119,10 @@ class Router {
 			}
 		}
 		for (const fixed of this.input.fixed) {
-			for (const piece of this.copper) {
+			for (const piece of this.copperIn(spanOf(fixed.a, fixed.b))) {
 				if (piece.net === fixed.net) continue;
 				if (segmentContact(piece.a, piece.b, fixed.a, fixed.b) !== undefined) {
-					if (!involved.has(piece.unit)) involved.set(piece.unit, piece.a);
+					involved.add(piece.unit);
 					this.contested.add(pointKey(piece.a));
 				}
 			}
@@ -1089,12 +1194,12 @@ export function routeWires(input: RouterInput): RouterResult {
 		let attempt = 1;
 		while (involved.size > 0) {
 			if (attempt >= input.attempts) {
-				const wires = [...involved.keys()].flatMap((unit) => router.units[unit]!.wires);
+				const wires = [...involved].flatMap((unit) => router.units[unit]!.wires);
 				return fail(Math.min(...wires), 'contention', attempt);
 			}
 			for (const key of router.contested) router.history.set(key, (router.history.get(key) ?? 0) + HISTORY * attempt);
 			router.contested.clear();
-			const units = [...involved.keys()].sort((left, right) => left - right).map((index) => router.units[index]!);
+			const units = [...involved].sort((left, right) => left - right).map((index) => router.units[index]!);
 			for (const unit of units) {
 				router.ripUp(unit);
 				for (const wire of unit.wires) rippedUp.push({ wire, attempt });
@@ -1111,8 +1216,9 @@ export function routeWires(input: RouterInput): RouterResult {
 		}
 		return { wires: router.routes.map((route) => route!), attempts: attempt - 1, rippedUp };
 	} catch (error) {
+		/* v8 ignore else -- anything else is a defect; rethrow it untouched. */
 		if (error instanceof RouterComplexityError) return fail(error.wire, 'complexity', 0);
-		/* v8 ignore next -- anything else is a defect; rethrow it untouched. */
+		/* v8 ignore next */
 		throw error;
 	}
 }

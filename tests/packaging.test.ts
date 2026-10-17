@@ -19,7 +19,7 @@ import manifest from '../package.json';
  * declares no Node type dependency and should not grow one for a test.
  */
 
-const INTERNAL_MODULES = new Set(['index', 'limits', 'route-cache', 'xml']);
+const INTERNAL_MODULES = new Set(['geom', 'index', 'limits', 'route', 'route-cache', 'syntax', 'xml']);
 
 const sourceModules = Object.keys(import.meta.glob('../src/*.ts'))
 	.map((path) => path.replace('../src/', '').replace(/\.ts$/, ''))

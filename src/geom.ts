@@ -100,12 +100,6 @@ export function rotate(point: IPoint, turn: Turn): IPoint {
 	}
 }
 
-/** Translate a rotated local point to an origin. */
-export function place(origin: IPoint, local: IPoint, turn: Turn): IPoint {
-	const rotated = rotate(local, turn);
-	return { x: origin.x + rotated.x, y: origin.y + rotated.y };
-}
-
 /** Whether two rectangles share interior area (touching edges do not). */
 export function overlaps(left: IRect, right: IRect): boolean {
 	return left.minX < right.maxX && left.maxX > right.minX && left.minY < right.maxY && left.maxY > right.minY;

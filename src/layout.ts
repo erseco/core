@@ -15,11 +15,10 @@ import { resolveSchematicLimits, SCHEMATIC_LIMITS } from './limits.js';
 import { compact, MAX_ROUTER_STATES, routeWires, type RouterFixed, type RouterObstacle, type RouterWire } from './route.js';
 import { canonicalName, halfExtents, placedPorts, resolvePlaced, turnOf, type PlacedPort } from './symbols/index.js';
 import { gateHeight } from './symbols/logic.js';
-import { gateDimensions, trackCoordinate, trackSpan } from './symbols/quantum.js';
+import { gateDimensions } from './symbols/quantum.js';
 import { distributed } from './symbols/common.js';
 import { icPin } from './symbols/electrical.js';
 import {
-	CLASSICAL_GATE_KINDS,
 	DIGITAL_COMPONENT_KINDS,
 	QUANTUM_SPECIAL_KINDS,
 	UML_COMPONENT_KINDS,
@@ -170,16 +169,6 @@ export function distributedCoordinate(index: number, count: number, span: number
 	return fromMilli(distributed(index, count, toMilli(span)));
 }
 
-/** Total centered height of a quantum glyph carrying `tracks` qubit lines. */
-export function quantumTrackSpan(tracks: number): number {
-	return fromMilli(trackSpan(tracks));
-}
-
-/** Vertical offset of quantum track `index` within a `tracks`-line glyph. */
-export function quantumTrackCoordinate(index: number, tracks: number): number {
-	return fromMilli(trackCoordinate(index, tracks));
-}
-
 /** Classical gate height: 16 per terminal on the busier side, never below 48. */
 export function classicalGateHeight(component: ClassicalGateComponent): number {
 	return gateHeight(component);
@@ -190,14 +179,10 @@ export function quantumGateDimensions(component: QuantumGateComponent): { bodyWi
 	return gateDimensions(component);
 }
 
-const CLASSICAL = new Set<string>(CLASSICAL_GATE_KINDS);
 const DIGITAL = new Set<string>(DIGITAL_COMPONENT_KINDS);
 const QUANTUM_SPECIAL = new Set<string>(QUANTUM_SPECIAL_KINDS);
 const UML = new Set<string>(UML_COMPONENT_KINDS);
 
-export function isClassicalGate(component: SchematicComponent): component is ClassicalGateComponent {
-	return CLASSICAL.has(component.kind);
-}
 export function isDigitalComponent(component: SchematicComponent): component is DigitalComponent {
 	return DIGITAL.has(component.kind);
 }
@@ -518,11 +503,19 @@ function checkMarkers(connection: SchematicConnection, points: readonly IPoint[]
 	}
 }
 
-/** Path data for an orthogonal polyline, with bridge arcs where its vertical runs cross other nets. */
-function orthogonalPathData(points: readonly IPoint[], crossings: ReadonlyMap<number, readonly number[]>, line: number): { d: string; extrema: IPoint[] } {
+/**
+ * Path data for an orthogonal polyline, with bridge arcs where its vertical runs
+ * cross other nets. `room(x, y)` bounds an arc's sideways bulge so it never
+ * reaches a neighbouring net's parallel wire.
+ */
+function orthogonalPathData(
+	points: readonly IPoint[],
+	crossings: ReadonlyMap<number, readonly number[]>,
+	room: (x: number, y: number) => number,
+	line: number
+): { d: string; extrema: IPoint[] } {
 	let d = `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
 	const extrema: IPoint[] = [points[0]!];
-	const radius = SCHEMATIC_BRIDGE_RADIUS * 1000;
 	for (let index = 1; index < points.length; index += 1) {
 		const start = points[index - 1]!;
 		const end = points[index]!;
@@ -536,7 +529,7 @@ function orthogonalPathData(points: readonly IPoint[], crossings: ReadonlyMap<nu
 		let cursor = start.y;
 		for (const [position, y] of ys.entries()) {
 			const r = Math.min(
-				radius,
+				room(start.x, y),
 				Math.abs(y - start.y),
 				Math.abs(end.y - y),
 				position === 0 ? Infinity : Math.floor(Math.abs(y - ys[position - 1]!) / 2),
@@ -765,6 +758,16 @@ export function routeSchematicConnections(
 		}
 	}
 	horizontals.sort((left, right) => left.y - right.y);
+	const verticals: { index: number; x: number; low: number; high: number }[] = [];
+	for (const index of orthogonal) {
+		const route = points[index]!;
+		for (let step = 1; step < route.length; step += 1) {
+			const a = route[step - 1]!;
+			const b = route[step]!;
+			if (a.x === b.x && a.y !== b.y) verticals.push({ index, x: a.x, low: Math.min(a.y, b.y), high: Math.max(a.y, b.y) });
+		}
+	}
+	const radius = SCHEMATIC_BRIDGE_RADIUS * 1000;
 	let crossingCount = 0;
 	for (const index of orthogonal) {
 		const route = points[index]!;
@@ -794,7 +797,17 @@ export function routeSchematicConnections(
 				crossings.set(step - 1, list);
 			}
 		}
-		const { d, extrema } = orthogonalPathData(route, crossings, connections[index]!.line);
+		/* An arc bulges toward -x; it may use at most half the gap to another
+		   net's vertical wire beside it. */
+		const room = (x: number, y: number): number => {
+			let limit = radius;
+			for (const run of verticals) {
+				if (identity[run.index] === identity[index] || run.x >= x || run.x <= x - 2 * radius) continue;
+				if (run.low < y + radius && run.high > y - radius) limit = Math.min(limit, Math.floor((x - run.x) / 2));
+			}
+			return limit;
+		};
+		const { d, extrema } = orthogonalPathData(route, crossings, room, connections[index]!.line);
 		const junction = junctions.get(index);
 		routes[index] = {
 			curve: 'ortho',

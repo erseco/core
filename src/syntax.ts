@@ -72,6 +72,14 @@ export function scanPort(text: string, index: number): number {
 	}
 }
 
+/**
+ * Whether `text` from `index` on holds U+2028 or U+2029. The 0.x patterns read
+ * a tail with `.+`, which stops at those, so a tail holding one never matched.
+ */
+function breaksLine(text: string, index: number): boolean {
+	return text.indexOf('\u2028', index) >= 0 || text.indexOf('\u2029', index) >= 0;
+}
+
 /** End of a run of one or more whitespace characters, or -1. */
 function scanSpaces(text: string, index: number): number {
 	let cursor = index;
@@ -172,7 +180,7 @@ function scanAbsolute(text: string, head: Head): AbsoluteComponentSyntax | undef
 	const yEnd = scanNumber(text, yStart);
 	if (yEnd < 0 || text.charCodeAt(yEnd) !== 41) return undefined;
 	const tail = scanSpaces(text, yEnd + 1);
-	if (tail < 0 || tail >= text.length) return undefined;
+	if (tail < 0 || tail >= text.length || breaksLine(text, tail)) return undefined;
 	return {
 		form: 'absolute',
 		kind: head.kind,
@@ -282,7 +290,7 @@ function scanConnection(text: string): ConnectionSyntax | undefined {
 	const toPortEnd = scanPort(text, toIdEnd + 1);
 	if (toPortEnd < 0) return undefined;
 	const tail = scanSpaces(text, toPortEnd);
-	if (tail < 0 || tail >= text.length) return undefined;
+	if (tail < 0 || tail >= text.length || breaksLine(text, tail)) return undefined;
 	return {
 		form: 'connection',
 		fromId: token(text, 0, fromIdEnd),
@@ -306,7 +314,7 @@ export function scanDeclaration(text: string): DeclarationSyntax | undefined {
 		const absolute = scanAbsolute(text, head);
 		if (absolute !== undefined) return absolute;
 		const placement = scanPlacement(text, head.rest);
-		if (placement.relations.length > 0 && placement.tail < text.length) {
+		if (placement.relations.length > 0 && placement.tail < text.length && !breaksLine(text, head.rest)) {
 			return { form: 'relative', kind: head.kind, id: head.id, label: head.label, relations: placement.relations, tail: token(text, placement.tail, text.length) };
 		}
 	}
