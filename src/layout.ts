@@ -12,7 +12,7 @@
 import { fmt, fromMilli, inflate, overlaps, contains, roundDiv, segmentContact, toMilli, type IPoint, type IRect } from './geom.js';
 import { mathLabelTextWidth } from './math-label.js';
 import { resolveSchematicLimits, SCHEMATIC_LIMITS } from './limits.js';
-import { compact, MAX_ROUTER_STATES, routeWires, type RouterFixed, type RouterObstacle, type RouterWire } from './route.js';
+import { Buckets, compact, MAX_ROUTER_STATES, routeWires, type RouterFixed, type RouterObstacle, type RouterWire } from './route.js';
 import { canonicalName, halfExtents, placedPorts, resolvePlaced, turnOf, type PlacedPort } from './symbols/index.js';
 import { gateHeight } from './symbols/logic.js';
 import { gateDimensions } from './symbols/quantum.js';
@@ -118,6 +118,8 @@ const TEXT_DESCENT_GUTTER = 5;
 const TEXT_ADVANCE = 7;
 const CONNECTION_TEXT_ADVANCE = 6;
 const TEXT_HORIZONTAL_GUTTER = 4;
+/** Room a routed wire keeps from component text, beyond its gutters, in milli-units. */
+const TEXT_WIRE_CLEARANCE = 4_000;
 
 /* ---- quarter turns (unit API) ---- */
 
@@ -582,11 +584,19 @@ export function routeSchematicConnections(
 		bodies.push({ owner: component.id, rect: body });
 		manual.push({ owner: component.id, rect: body });
 		for (const rect of labelRects(component)) {
-			obstacles.push({ owner: index, kind: 'label', rect });
+			obstacles.push({ owner: index, kind: 'label', rect: inflate(rect, TEXT_WIRE_CLEARANCE) });
 			manual.push({ owner: component.id, rect });
 		}
 	}
+	const occupied = new Buckets<{ owner: string; rect: IRect }>();
+	for (const entry of manual) occupied.add(entry, entry.rect);
 	const identity = contactIdentities(connections);
+	const netTerminals = new Map<number, Set<string>>();
+	for (const [index, connection] of connections.entries()) {
+		const keys = netTerminals.get(identity[index]!) ?? new Set<string>();
+		keys.add(`${connection.from.componentId}.${connection.from.port}`).add(`${connection.to.componentId}.${connection.to.port}`);
+		netTerminals.set(identity[index]!, keys);
+	}
 	const endpoint = (componentId: string, port: string): PlacedPort => {
 		const component = components.get(componentId);
 		if (component === undefined) throw new Error(`Validated component ${componentId} is missing.`);
@@ -631,6 +641,26 @@ export function routeSchematicConnections(
 			chords = [start, end];
 		}
 		checkMarkers(connection, points[index]!, bodies);
+		/* A drawn wire through another component's terminal reads as a connection. */
+		const reach = chords.reduce((box, point) => ({ minX: Math.min(box.minX, point.x), minY: Math.min(box.minY, point.y), maxX: Math.max(box.maxX, point.x), maxY: Math.max(box.maxY, point.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+		for (const component of list) {
+			/* Its own components are exempt, as their bodies are. */
+			if (component.id === connection.from.componentId || component.id === connection.to.componentId) continue;
+			for (const port of placedPorts(component)) {
+				const at = port.point;
+				if (at.x < reach.minX || at.x > reach.maxX || at.y < reach.minY || at.y > reach.maxY) continue;
+				if (netTerminals.get(identity[index]!)!.has(`${component.id}.${port.id}`)) continue;
+				for (let step = 1; step < chords.length; step += 1) {
+					if (segmentContact(chords[step - 1]!, chords[step]!, at, at) === undefined) continue;
+					throw new SchematicSyntaxError(
+						`${connection.curve === 'bezier' ? 'Bézier' : 'Line'} route passes through ${component.id}.${port.id}, which it does not connect; use an orthogonal route or move ${component.id}.`,
+						connection.line,
+						undefined,
+						'routing'
+					);
+				}
+			}
+		}
 		for (let step = 1; step < chords.length; step += 1) {
 			if (chords[step - 1]!.x === chords[step]!.x && chords[step - 1]!.y === chords[step]!.y) continue;
 			fixed.push({ net: identity[index]!, a: chords[step - 1]!, b: chords[step]! });
@@ -673,11 +703,30 @@ export function routeSchematicConnections(
 		const placed = endpoint(componentId, port);
 		const component = components.get(componentId)!;
 		const expanded = bodyRect(component, clearance);
-		const escape = {
+		let escape = {
 			x: placed.normal.x < 0 ? expanded.minX : placed.normal.x > 0 ? expanded.maxX : placed.point.x,
 			y: placed.normal.y < 0 ? expanded.minY : placed.normal.y > 0 ? expanded.maxY : placed.point.y
 		};
-		return { owner: owners.get(componentId)!, point: placed.point, escape };
+		/* Text standing across the pin's exit: the stub runs straight through it
+		   and routing starts beyond it, so no wire ever turns inside the words —
+		   unless beyond it lies the fence, or another component whose body or
+		   text would then wall the escape in. */
+		const original = escape;
+		/* Text rows sit above and below a body, so only a pin leaving up or down
+		   can meet one: text holding its escape point, or starting within a
+		   clearance past it. */
+		for (const text of labelRects(component)) {
+			const rect = inflate(text, TEXT_WIRE_CLEARANCE);
+			if (placed.normal.x !== 0 || escape.x <= rect.minX || escape.x >= rect.maxX) continue;
+			if (placed.normal.y < 0 && rect.minY < escape.y && rect.maxY > escape.y - clearance) escape = { x: escape.x, y: rect.minY };
+			if (placed.normal.y > 0 && rect.maxY > escape.y && rect.minY < escape.y + clearance) escape = { x: escape.x, y: rect.maxY };
+		}
+		const at = escape;
+		const outside = bounds !== undefined && (at.x < 0 || at.y < 0 || at.x > toMilli(bounds.width) || at.y > toMilli(bounds.height));
+		const walled = outside || occupied
+			.query({ minX: at.x, minY: at.y, maxX: at.x, maxY: at.y })
+			.some((entry) => entry.owner !== componentId && at.x > entry.rect.minX && at.x < entry.rect.maxX && at.y > entry.rect.minY && at.y < entry.rect.maxY);
+		return { owner: owners.get(componentId)!, point: placed.point, escape: walled ? original : escape };
 	};
 	/* Two nets whose pin stubs meet can never be routed apart; say so plainly
 	   rather than as a routing failure. */

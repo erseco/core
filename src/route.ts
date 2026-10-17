@@ -137,7 +137,7 @@ const CELL_OFFSET = 2 ** 20;
  * A query returns items in insertion order, so callers see exactly the order a
  * full scan would have.
  */
-class Buckets<T> {
+export class Buckets<T> {
 	private readonly cells = new Map<number, number[]>();
 	readonly items: T[] = [];
 	private stamps = new Uint32Array(64);
@@ -506,6 +506,23 @@ class Router {
 		}
 	}
 
+	/**
+	 * The first wire whose pin stub runs through a third component's body, or -1.
+	 * Reaching into the body at the wire's other end is two facing pins, which
+	 * the straight shortcut joins.
+	 */
+	blockedStub(): number {
+		for (const [index, wire] of this.input.wires.entries()) {
+			for (const { point, escape } of [wire.from, wire.to]) {
+				for (const obstacle of this.obstacles.query(spanOf(point, escape))) {
+					if (obstacle.kind !== 'body' || obstacle.owner === wire.from.owner || obstacle.owner === wire.to.owner) continue;
+					if (axisSegmentEntersRect(point, escape, obstacle.rect)) return index;
+				}
+			}
+		}
+		return -1;
+	}
+
 	/** Reserve every terminal stub as copper of its unit before anything routes. */
 	seedStubs(): void {
 		const seen = new Set<string>();
@@ -825,12 +842,19 @@ class Router {
 			const cc1 = Math.min(width - 2, lowerBound(xs, rect.maxX) - 1);
 			for (let r = rr0; r <= rr1; r += 1) for (let c = cc0; c <= cc1; c += 1) s.blockH[r * width + c] = 1;
 		};
+		/* Text blocks every wire, its own component's included. An escape point
+		   is placed beyond its own component's text where there is room; text
+		   still holding one, whoever's it is, cannot wall that pin in. */
+		const escapes = unitWires.flatMap((wire) => [wire.from.escape, wire.to.escape]);
+		const holdsEscape = (r: IRect): boolean => escapes.some((at) => at.x > r.minX && at.x < r.maxX && at.y > r.minY && at.y < r.maxY);
 		for (const obstacle of this.obstacles.query(window)) {
 			if (obstacle.kind === 'body') {
 				if (relaxed.has(obstacle.owner)) block(obstacle.rect);
+			} else if (obstacle.kind === 'label') {
+				if (!holdsEscape(obstacle.rect)) block(obstacle.rect);
 			} else if (!relaxed.has(obstacle.owner)) block(obstacle.rect);
 		}
-		for (const label of this.labelsIn(window)) block(label.rect);
+		for (const label of this.labelsIn(window)) if (!holdsEscape(label.rect)) block(label.rect);
 
 		/* Copper of other nets: occupied edges, and how each touched node is used.
 		   In tree mode the unit's own joined copper is marked too, as branch points;
@@ -1175,6 +1199,8 @@ export function routeWires(input: RouterInput): RouterResult {
 		failed: wire,
 		reason
 	});
+	const blocked = router.blockedStub();
+	if (blocked >= 0) return fail(blocked, 'unroutable', 0);
 	try {
 		/* Pass one: contact forbidden. A unit that cannot be placed that way is
 		   placed at a price and left for negotiation. */

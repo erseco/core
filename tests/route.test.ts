@@ -162,6 +162,30 @@ describe('search', () => {
 		]);
 	});
 
+	test('a connector label laid over a pin\'s exit does not wall that pin in', () => {
+		/* The first wire's label covers the second wire's escape point. */
+		const label = { minX: 140 * U, minY: 140 * U, maxX: 180 * U, maxY: 160 * U };
+		const result = routeWires({
+			bounds,
+			obstacles: [],
+			wires: [wire(pin(1, 20, 250), pin(2, 380, 250), 1, { label: () => label }), wire(pin(3, 160, 120, 160, 150), pin(4, 300, 60, 300, 72), 2)],
+			fixed: [],
+			attempts: 1
+		});
+		expect(result.failed).toBeUndefined();
+	});
+
+	test('a neighbour whose clearance ring holds an escape point blocks only with its body', () => {
+		const result = routeWires({
+			bounds,
+			obstacles: [wall(50, 80, 80, 140, 140), { owner: 50, kind: 'body', rect: { minX: 100 * U, minY: 100 * U, maxX: 120 * U, maxY: 120 * U } }],
+			wires: [wire(pin(1, 40, 130, 90, 130), pin(2, 300, 200, 288, 200), 1)],
+			fixed: [],
+			attempts: 1
+		});
+		expect(result.failed).toBeUndefined();
+	});
+
 	test('pins that coincide route through the lattice, not the shortcut', () => {
 		const result = routeWires({
 			bounds,
@@ -235,6 +259,30 @@ describe('budgets and failures', () => {
 			states: 5
 		};
 		expect(routeWires(input)).toMatchObject({ reason: 'complexity', failed: 0 });
+	});
+
+	test('reports a branch whose terminal is walled in', () => {
+		const group = { group: 0, joinFrom: true, joinTo: true };
+		const root = pin(1, 40, 100);
+		const result = routeWires({
+			bounds,
+			obstacles: [wall(900, 280, 80, 320, 90), wall(901, 280, 110, 320, 120), wall(902, 280, 80, 290, 120), wall(903, 310, 80, 320, 120)],
+			wires: [wire(root, pin(2, 200, 250), 1, group), wire(root, pin(3, 300, 100), 1, group)],
+			fixed: [],
+			attempts: 1
+		});
+		expect(result).toMatchObject({ reason: 'contention', failed: 1 });
+	});
+
+	test('reports a pin whose stub runs through a third component', () => {
+		const result = routeWires({
+			bounds,
+			obstacles: [{ owner: 7, kind: 'body', rect: { minX: 45 * U, minY: 90 * U, maxX: 55 * U, maxY: 110 * U } }],
+			wires: [wire(pin(1, 40, 100, 60, 100), pin(2, 300, 100, 288, 100), 1)],
+			fixed: [],
+			attempts: 4
+		});
+		expect(result).toMatchObject({ reason: 'unroutable', failed: 0 });
 	});
 
 	test('reports a terminal walled in on every side as unroutable', () => {

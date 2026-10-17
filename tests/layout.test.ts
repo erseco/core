@@ -299,7 +299,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			'M 0 100 C 121 100, 121 150, 242 150'
 		);
 		expect(routeConnection({ ...base, curve: 'ortho' }, components).d).toBe(
-			'M 0 100 H -12 V 132 H 254 V 150 H 242'
+			'M 0 100 H -12 V 168 H 254 V 150 H 242'
 		);
 		expect(() =>
 			routeConnection(
@@ -347,7 +347,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(SCHEMATIC_OBSTACLE_CLEARANCE).toBe(12);
 		expect(obstacleBounds).toEqual({ minX: 196, minY: 90, maxX: 304, maxY: 150 });
 		expect(routeConnection(connection, components)).toMatchObject({
-			d: 'M 92 120 H 104 V 80 H 396 V 120 H 408'
+			d: 'M 92 120 H 104 V 76 H 396 V 120 H 408'
 		});
 		expect(() => componentObstacleRectangle(obstacle, -1)).toThrow(/finite non-negative/);
 		expect(() => componentObstacleRectangle(obstacle, Number.NaN)).toThrow(/finite non-negative/);
@@ -364,7 +364,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			[
 				terminal('L', 50, 100),
 				terminal('R', 550, 100),
-				terminal('T', 300, 20, 'down'),
+				terminal('T', 300, -20, 'down'),
 				terminal('B', 300, 280, 'up'),
 				terminal('L2', 70, 180),
 				terminal('R2', 570, 180),
@@ -397,9 +397,16 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 			maxX: 334.65,
 			maxY: 100
 		});
-		/* The vertical trace keeps clear of the label box: it passes one lattice
-		   column left of the label rather than through it. */
-		expect(labelRoutes[1]!.d).toContain('H 264 V 95');
+		/* The vertical trace keeps clear of the label box rather than running
+		   through it. */
+		const box = connectionLabelRectangle(labeled, labelRoutes[0]!)!;
+		const vertical = labelRoutes[1]!.points;
+		for (let step = 1; step < vertical.length; step += 1) {
+			const [a, b] = [vertical[step - 1]!, vertical[step]!];
+			const enters =
+				Math.max(a.x, b.x) > box.minX && Math.min(a.x, b.x) < box.maxX && Math.max(a.y, b.y) > box.minY && Math.min(a.y, b.y) < box.maxY;
+			expect(enters).toBe(false);
+		}
 
 		const separated = routeConnections(
 			[
@@ -690,7 +697,7 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		expect(() => routeConnections([{ ...base, curve: 'line' }, bezier], components)).toThrow(
 			/Separate nets touch or cross/
 		);
-		expect(routeConnections([base, bezier], components)[0]!.d).toBe('M 92 120 H 104 V -20 H 396 V 120 H 408');
+		expect(routeConnections([base, bezier], components)[0]!.d).toBe('M 92 120 H 104 V -24 H 396 V 120 H 408');
 		const routed = routeConnections(
 			[
 				{ ...base, net: 'SHARED' },
@@ -783,8 +790,8 @@ ic:U1 "Chip" at (960, 180) [left="A" right="Y"]`,
 		);
 		expect(sharedColumn[0]!.d).not.toBe(sharedColumn[1]!.d);
 		expect(sharedColumn.map((route) => route.d)).toEqual([
-			'M 300 42 V 54 H 288 V 354 H 300 V 342',
-			'M 300 122 V 134 H 312 V 434 H 300 V 422'
+			'M 300 42 V 70 H 288 V 370 H 300 V 342',
+			'M 300 122 V 150 H 312 V 450 H 300 V 422'
 		]);
 		expect(() =>
 			routeConnections(
@@ -1320,5 +1327,28 @@ describe('container overlaps', () => {
 		expect(() =>
 			parseSchematic('component:C "C" at (350,260) #slate [width=500 height=360]\ncomponent-port:CP "Port" at (95,260) #blue', fence)
 		).toThrow(/overlaps/);
+	});
+});
+
+describe('drawn wires and terminals', () => {
+	const fence = { bounds: { width: 600, height: 400 }, title: 'drawn' } as const;
+	const parts = 'resistor:R1 "a" at (100, 100) #amber\nresistor:R2 "b" at (500, 100) #amber\nresistor:R3 "c" at (300, 142) #amber [orientation=down]';
+
+	test('a straight wire through a third component\'s terminal is rejected', () => {
+		expect(() => parseSchematic(`${parts}\nR1.out -> R2.in #amber [line]`, fence)).toThrow(
+			'Line 4: Line route passes through R3.in, which it does not connect; use an orthogonal route or move R3.'
+		);
+		/* A Bézier between level terminals is the same straight stroke. */
+		expect(() => parseSchematic(`${parts}\nR1.out -> R2.in #amber [bezier]`, fence)).toThrow('Line 4: Bézier route passes through R3.in');
+	});
+
+	test('the terminal may be passed when it is on the wire\'s own net', () => {
+		expect(() => parseSchematic(`${parts}\nR1.out -> R3.in #amber [ortho]\nR1.out -> R2.in #amber [line]`, fence)).not.toThrow();
+	});
+
+	test('a terminal inside the wire\'s reach but off its line is no contact', () => {
+		expect(() =>
+			parseSchematic('resistor:R1 "a" at (100, 100) #amber\nresistor:R2 "b" at (500, 300) #amber\nresistor:R3 "c" at (300, 300) #amber\nR1.out -> R2.in #amber [line]', fence)
+		).not.toThrow();
 	});
 });

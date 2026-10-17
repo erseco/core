@@ -241,13 +241,15 @@ N4.out -> N5.out #blue [ortho]`;
 		expect(
 			[...svg.matchAll(/schematic-trace[^"]*" d="([^"]*)"/g)].map((match) => match[1])
 		).toEqual([
-			'M 122 480 H 134 V 426 H 280 V 438',
-			'M 480 422 V 434 H 262 V 426',
-			'M 538 780 H 526 V 226 H 280 V 238'
+			'M 122 480 H 134 V 412 H 280 V 438',
+			'M 480 422 V 450 H 462 V 412 H 280',
+			'M 538 780 H 526 V 212 H 280 V 238'
 		]);
 		/* The two wires into N2.in are one net: the second joins the first at a
-		   dot, clear of the pin, instead of running its own lead into it. */
-		expect(svg).toMatch(/schematic-node-fill" fill="currentColor" cx="262" cy="426" r="3"/);
+		   dot, clear of the pin, instead of running its own lead into it. Every
+		   wire leaves its pin straight through the pin's own text and turns only
+		   beyond it. */
+		expect(svg).toMatch(/schematic-node-fill" fill="currentColor" cx="280" cy="412" r="3"/);
 	});
 
 	test('routes identically on every compile of one source', () => {
