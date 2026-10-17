@@ -51,7 +51,7 @@ const mutants = [
 	{
 		name: "a direction measures from the reference body, not its origin",
 		file: "src/placement.ts",
-		from: "\t\treturn { ...milliRect(componentRectangle(component)), originX: toMilli(component.x), originY: toMilli(component.y) };",
+		from: "\t\treturn { ...milliRect(componentPlacementRectangle(component)), originX: toMilli(component.x), originY: toMilli(component.y) };",
 		to: "\t\treturn { minX: toMilli(component.x), maxX: toMilli(component.x), minY: toMilli(component.y), maxY: toMilli(component.y), originX: toMilli(component.x), originY: toMilli(component.y) };",
 		tests: ["tests/placement.test.ts"]
 	},
@@ -646,8 +646,8 @@ const mutants = [
 	{
 		name: "a wire written to a junction part is drawn to it",
 		file: "src/layout.ts",
-		from: "\t\t\tjoinTo: signal && connection.markerEnd === 'none' && components.get(connection.to.componentId)!.kind !== 'junction',",
-		to: "\t\t\tjoinTo: signal && connection.markerEnd === 'none',",
+		from: "\t\t\tmeetTo: components.get(connection.to.componentId)!.kind === 'junction',",
+		to: "\t\t\tmeetTo: false,",
 		tests: ["tests/regressions.test.ts", "tests/trunk.test.ts", "tests/layout.test.ts"]
 	},
 	{
@@ -684,6 +684,20 @@ const mutants = [
 		from: "\trangle: '\u27e9',\n",
 		to: "",
 		tests: ["tests/math-label.test.ts"]
+	},
+	{
+		name: "a junction with every side taken joins its net's copper instead",
+		file: "src/route.ts",
+		from: "\t\t\tif (path === undefined && meet && mayJoin && !first) {",
+		to: "\t\t\tif (false) {",
+		tests: ["tests/regressions.test.ts"]
+	},
+	{
+		name: "placement measures from a junction's centred rows",
+		file: "src/layout.ts",
+		from: "\treturn rectUnits(componentExtent(component, true));",
+		to: "\treturn rectUnits(componentExtent(component, false));",
+		tests: ["tests/regressions.test.ts", "tests/placement.test.ts"]
 	}
 ];
 

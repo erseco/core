@@ -282,12 +282,17 @@ export function componentObstacleRectangle(component: SchematicComponent, cleara
 
 /** External designator and label fitting metrics. */
 export function componentTextAnchors(component: SchematicComponent): ComponentTextAnchors {
-	const halfHeight = fromMilli(halfExtents(component)[1]);
 	/* Up and to the right of the dot, clear of both axes through it once
 	   wires keep their clearance from text. */
 	if (component.kind === 'junction') {
 		return { designatorY: -27, labelY: -10, designatorWidth: mathLabelTextWidthAt(component.id, TEXT_SIZE), labelWidth: mathLabelTextWidthAt(component.label, TEXT_SIZE), textX: 10 };
 	}
+	return centredTextAnchors(component);
+}
+
+/** Designator above and label below, both centred: every part's rows but a junction's. */
+function centredTextAnchors(component: SchematicComponent): ComponentTextAnchors {
+	const halfHeight = fromMilli(halfExtents(component)[1]);
 	return {
 		designatorY: -halfHeight - DESIGNATOR_BASELINE_GAP,
 		labelY: halfHeight + LABEL_BASELINE_GAP,
@@ -313,14 +318,14 @@ export function labelRects(component: SchematicComponent): readonly IRect[] {
 }
 
 /** Complete component bounds including text and port hotspots, in milli-units. */
-export function componentExtent(component: SchematicComponent): IRect {
+export function componentExtent(component: SchematicComponent, centred = false): IRect {
 	const [w, h] = halfExtents(component);
 	const x = toMilli(component.x);
 	const y = toMilli(component.y);
 	let rect: { minX: number; minY: number; maxX: number; maxY: number };
 	if (isUmlComponent(component)) rect = { minX: x - w, minY: y - h, maxX: x + w, maxY: y + h };
 	else {
-		const anchors = componentTextAnchors(component);
+		const anchors = centred ? centredTextAnchors(component) : componentTextAnchors(component);
 		const textHalf = toMilli(Math.max(anchors.designatorWidth, anchors.labelWidth) / 2 + TEXT_HORIZONTAL_GUTTER);
 		const half = Math.max(w, textHalf);
 		rect = {
@@ -329,9 +334,11 @@ export function componentExtent(component: SchematicComponent): IRect {
 			maxX: x + half,
 			maxY: Math.max(y + h, y + toMilli(anchors.labelY + TEXT_DESCENT_GUTTER))
 		};
-		for (const text of labelRects(component)) {
-			rect.minX = Math.min(rect.minX, text.minX);
-			rect.maxX = Math.max(rect.maxX, text.maxX);
+		if (anchors.textX !== undefined) {
+			for (const text of labelRects(component)) {
+				rect.minX = Math.min(rect.minX, text.minX);
+				rect.maxX = Math.max(rect.maxX, text.maxX);
+			}
 		}
 	}
 	const radius = PORT_HOTSPOT_RADIUS * 1000;
@@ -347,6 +354,15 @@ export function componentExtent(component: SchematicComponent): IRect {
 /** Complete component bounds, including text and interactive port radii. */
 export function componentRectangle(component: SchematicComponent): SchematicRectangle {
 	return rectUnits(componentExtent(component));
+}
+
+/**
+ * The rectangle relative placement measures from: the part with its text rows
+ * centred, as every release has placed it. A junction draws its text beside
+ * the dot, but measuring from there would move whatever is placed against it.
+ */
+export function componentPlacementRectangle(component: SchematicComponent): SchematicRectangle {
+	return rectUnits(componentExtent(component, true));
 }
 
 /** The half-length point of a routed connection. */
@@ -845,9 +861,11 @@ export function routeSchematicConnections(
 			to: terminal(connection.to.componentId, connection.to.port),
 			net: identity[index]!,
 			group: signal ? groups.find(index) : -1,
+			joinFrom: signal && connection.markerStart === 'none',
+			joinTo: signal && connection.markerEnd === 'none',
 			/* An end on a junction part is drawn to it: the author chose where it joins. */
-			joinFrom: signal && connection.markerStart === 'none' && components.get(connection.from.componentId)!.kind !== 'junction',
-			joinTo: signal && connection.markerEnd === 'none' && components.get(connection.to.componentId)!.kind !== 'junction',
+			meetFrom: components.get(connection.from.componentId)!.kind === 'junction',
+			meetTo: components.get(connection.to.componentId)!.kind === 'junction',
 			label: connection.label === undefined ? undefined : (route) => labelRectAt(connection, midpoint(route))
 		};
 	});

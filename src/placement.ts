@@ -31,7 +31,7 @@
  * @packageDocumentation
  */
 import { append, fromMilli, parseMilli, toMilli, type IPoint } from './geom.js';
-import { canonicalPortName, componentRectangle, resolvePortPoint } from './layout.js';
+import { canonicalPortName, componentPlacementRectangle, resolvePortPoint } from './layout.js';
 import {
 	SchematicSyntaxError,
 	type SchematicComponent,
@@ -113,7 +113,7 @@ function referenceGeometry(
 	readonly originY: number;
 } {
 	if (relation.port === undefined) {
-		return { ...milliRect(componentRectangle(component)), originX: toMilli(component.x), originY: toMilli(component.y) };
+		return { ...milliRect(componentPlacementRectangle(component)), originX: toMilli(component.x), originY: toMilli(component.y) };
 	}
 	/* Safe unvalidated: the reference pass below rejects a terminal that does not
 	   exist before any relation is evaluated, so every port reaching here resolves. */
@@ -319,7 +319,7 @@ export function resolvePlacements(
 		   the component lands, and asking for them after positioning would make
 		   the arithmetic circular. UML port hotspots make them asymmetric, so the
 		   two edges are carried separately rather than as one half-width. */
-		const atOrigin = milliRect(componentRectangle({ ...component, x: 0, y: 0 } as SchematicComponent));
+		const atOrigin = milliRect(componentPlacementRectangle({ ...component, x: 0, y: 0 } as SchematicComponent));
 
 		const relations = normalized.get(id)!;
 		/*
