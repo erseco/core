@@ -82,7 +82,7 @@ const BUDGETS = [
 		 * before them. 669 B gzip for text measured against Arial's advances
 		 * instead of one cell width — so labels are no longer squeezed by
 		 * `textLength` — and placement that reports every broken relation with
-		 * its columns. 1,280 B for what a seeded property search over random
+		 * its columns. 1,306 B for what a seeded property search over random
 		 * layouts found the router drawing wrongly, and for wires that meet at
 		 * a junction part instead of tapping each other beside it: dots where a wire crosses
 		 * its own net, loops drawn along the tree, other nets' leads treated as

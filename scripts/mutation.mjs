@@ -677,6 +677,13 @@ const mutants = [
 		from: "\t\t\t\tif (!own.has(obstacle.owner)) block(obstacle.rect);",
 		to: "\t\t\t\tif (false) block(obstacle.rect);",
 		tests: ["tests/regressions.test.ts"]
+	},
+	{
+		name: "a ket closes with an angle bracket, not the command's text",
+		file: "src/math-label.ts",
+		from: "\trangle: '\u27e9',\n",
+		to: "",
+		tests: ["tests/math-label.test.ts"]
 	}
 ];
 

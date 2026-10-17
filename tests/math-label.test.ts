@@ -111,3 +111,12 @@ describe('measured text width', () => {
 		expect(parseMathLabel('R_{load}')).toEqual(first);
 	});
 });
+
+describe('bra-ket notation', () => {
+	test('angle brackets and the circled plus are symbols, measured like the rest', () => {
+		expect(mathLabelText('|0\\rangle')).toBe('|0⟩');
+		expect(mathLabelText('\\langle\\psi|\\phi\\rangle')).toBe('⟨\\psi|φ⟩');
+		expect(mathLabelText('a \\oplus b')).toBe('a ⊕ b');
+		expect(mathLabelTextWidthAt('|0\\rangle', 12)).toBe(mathLabelTextWidthAt('|0⟩', 12));
+	});
+});
