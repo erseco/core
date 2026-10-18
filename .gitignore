@@ -34,3 +34,4 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+fuzz-failure-*.json

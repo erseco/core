@@ -2,6 +2,22 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
+## [1.0.2] - 2026-10-17
+
+### Fixed
+
+- **A part placed against a declaration that failed is no longer told that declaration does not exist.** When a declaration's own line failed — an unknown option, say — anything placed relative to it was reported as referencing a part "the document never declares", which sent the author to a line that was fine. It is now left unplaced without a second diagnostic, as 1.0 already did for everything that depends on a failed placement. `resolvePlacements` takes the ids that already failed as an optional fifth argument. Found while writing the 1.0 documentation's diagnostics page.
+- **A broken placement no longer hides a mistyped terminal elsewhere.** `diagnoseSchematic` stopped as soon as any relative placement failed, so a connection to a terminal that does not exist went unreported until the placement was fixed. Connections are now checked either way — a terminal's name depends on its part's kind, never on where it sits — and geometry and routing still wait for a document whose declarations are sound.
+- **A connection to a junction that its net's copper already runs through follows that copper.** When an earlier wire of the net passed straight through a junction's dot, a later connection to that junction was routed toward a point the copper already touched, and could draw a small detour loop beside the dot. The junction now counts as joined, so the connection is drawn along the existing copper and adds no ink. Found by layout fuzzing over 40,000 random documents; the 270-document corpus draws byte-identically.
+
+### Added
+
+- **`scripts/fuzz.mjs`, a mutation fuzzer for the compiler's contract,** run in CI and by `release:check` as `test:fuzz:contract`. It breaks real documents the way an editor does mid-keystroke and checks every result: `compileSchematic` throws nothing but `SchematicSyntaxError`, `diagnoseSchematic` never throws and keeps every column range inside its line, the two agree on whether a document compiles, and a compiled document is deterministic, balanced, finite, and netlists cleanly. 840,000 cases found no contract violation.
+
+## [1.0.1] - 2026-10-17
+
+No changes from 1.0.0. This version was tagged before the fixes meant for it were merged, so its package is 1.0.0's code under a new version number; those fixes shipped as 1.0.2. Upgrading from 1.0.0 to 1.0.1 changes nothing.
+
 ## [1.0.0] - 2026-10-17
 
 1.0 is a rebuild of the compiler's core behind the same language and the same API. The language is read exactly as before — the 0.8 declaration patterns are the front end — and of the corpus's 54 rejections under 0.8, 52 are byte-identical in 1.0. Drawings change, because the router is new, and three corpus documents change outcome; each is listed under *Changed*.

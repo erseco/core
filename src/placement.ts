@@ -213,7 +213,9 @@ export function resolvePlacements(
 	components: readonly SchematicComponent[],
 	pending: readonly PendingPlacement[],
 	placementDepth: number,
-	report?: (error: SchematicSyntaxError) => void
+	report?: (error: SchematicSyntaxError) => void,
+	/** Declarations that already failed and were reported; a reference to one is not blamed again. */
+	failedDeclarations?: ReadonlySet<string>
 ): readonly SchematicPlacement[] {
 	const byId = new Map(components.map((component) => [component.id, component]));
 	const pendingById = new Map(pending.map((entry) => [entry.component.id, entry]));
@@ -248,6 +250,12 @@ export function resolvePlacements(
 				continue entries;
 			}
 			const reference = byId.get(relation.ref);
+			/* Declared, but its own line failed and said so: placing against it is
+			   left undone, silently, rather than reported as never declared. */
+			if (reference === undefined && failedDeclarations?.has(relation.ref) === true) {
+				failed.add(component.id);
+				continue entries;
+			}
 			if (reference === undefined) {
 				/* Declaration order is deliberately not the fix: the sort resolves a
 				   forward reference, so the advice is to declare the target at all. */

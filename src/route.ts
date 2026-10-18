@@ -740,6 +740,19 @@ class Router {
 			if (path === undefined) return chosen;
 			this.#commit(chosen, path, branch && freeIsTo, branch && !freeIsTo);
 			connected.add(pointKey(free!.point));
+			/* A junction this copper runs straight through is on the tree already, so
+			   a connection to it is joined there, not grown toward a point it touches. */
+			for (const index of pending) {
+				const other = this.#input.wires[index]!;
+				for (const [end, meets] of [
+					[other.from, other.meetFrom],
+					[other.to, other.meetTo]
+				] as const) {
+					if (meets === true && path.some((point, at) => at > 0 && segmentContact(path[at - 1]!, point, end.point, end.point) !== undefined)) {
+						connected.add(pointKey(end.point));
+					}
+				}
+			}
 		}
 		/* A connection both of whose ends the tree already joins adds nothing
 		   electrically: it is drawn along the copper that joins them, so it adds
