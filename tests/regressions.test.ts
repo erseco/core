@@ -1019,4 +1019,27 @@ VIN.negative -> G.in #slate [ortho]`,
 		);
 		expect(traces(result.svg).slice(2, 9)).toEqual(['M 360 160 H 512', 'M 360 160 V 218', 'M 512 186 H 460 V 290', 'M 460 290 H 578', 'M 662 290 H 740 V 173', 'M 608 173 H 740', 'M 460 290 V 318']);
 	});
+
+	test('a connection to a junction that copper already runs through follows that copper', () => {
+		/* Found by the layout fuzzer. C0 to C2 passes straight through C1's dot,
+		   so C1 is on the tree before any wire is written to it; the repeated
+		   C1-to-C0 connection was grown toward that point anyway and drew a
+		   4-unit detour loop beside the dot. Joined ends add no ink. */
+		const result = compileSchematic(
+			`port:C0 "x" at (220, 160) #blue [orientation=left]
+junction:C1 "J" at (80, 280) #blue
+not:C2 "N" at (80, 200) #amber [orientation=down]
+switch:C3 "S" at (460, 100) #blue [type=spdt orientation=down]
+C1.node -> C3.normally-closed #blue [ortho]
+C0.out -> C2.out1 #blue [ortho]
+C1.node -> C0.out #blue [ortho]
+C1.node -> C0.out #blue [ortho]`,
+			{ bounds: { width: 600, height: 400 }, title: 'junction on copper', mode: 'full' }
+		);
+		const paths = traces(result.svg);
+		/* C0 to C2 runs through the dot; both repeats retrace exactly that copper. */
+		expect(paths[1]).toBe('M 178 160 H 116 V 280 H 80 V 248');
+		expect(paths[2]).toBe('M 80 280 H 116 V 160 H 178');
+		expect(paths[3]).toBe(paths[2]);
+	});
 });

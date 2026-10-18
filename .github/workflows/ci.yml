@@ -47,6 +47,9 @@ jobs:
       - name: Enforce compiler size budget
         run: bun run size
 
+      - name: Fuzz the compile and diagnose contract
+        run: bun run test:fuzz:contract
+
       - name: Run tests with coverage
         shell: bash
         run: |

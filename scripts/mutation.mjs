@@ -712,6 +712,13 @@ const mutants = [
 		from: "\t\t   terminal's name depends on its part's kind, never on where it sits. */\n\t\tfor (const entry of pending) {",
 		to: "\t\t   terminal's name depends on its part's kind, never on where it sits. */\n\t\tif (reporter.failed) return undefined;\n\t\tfor (const entry of pending) {",
 		tests: ["tests/diagnose.test.ts"]
+	},
+	{
+		name: "a junction its net's copper already runs through joins the tree there",
+		file: "src/route.ts",
+		from: "\t\t\t\t\t\tconnected.add(pointKey(end.point));",
+		to: "\t\t\t\t\t\tvoid end;",
+		tests: ["tests/regressions.test.ts"]
 	}
 ];
 
