@@ -2,12 +2,16 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
-## [1.0.1] - 2026-10-17
+## [1.0.2] - 2026-10-17
 
 ### Fixed
 
 - **A part placed against a declaration that failed is no longer told that declaration does not exist.** When a declaration's own line failed — an unknown option, say — anything placed relative to it was reported as referencing a part "the document never declares", which sent the author to a line that was fine. It is now left unplaced without a second diagnostic, as 1.0 already did for everything that depends on a failed placement. `resolvePlacements` takes the ids that already failed as an optional fifth argument. Found while writing the 1.0 documentation's diagnostics page.
 - **A broken placement no longer hides a mistyped terminal elsewhere.** `diagnoseSchematic` stopped as soon as any relative placement failed, so a connection to a terminal that does not exist went unreported until the placement was fixed. Connections are now checked either way — a terminal's name depends on its part's kind, never on where it sits — and geometry and routing still wait for a document whose declarations are sound.
+
+## [1.0.1] - 2026-10-17
+
+No changes from 1.0.0. This version was tagged before the fixes meant for it were merged, so its package is 1.0.0's code under a new version number; those fixes shipped as 1.0.2. Upgrading from 1.0.0 to 1.0.1 changes nothing.
 
 ## [1.0.0] - 2026-10-17
 
