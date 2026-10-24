@@ -2,7 +2,7 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
-## [1.1.0] - Unreleased
+## [1.1.0] - 2026-10-24
 
 1.1 lets a part take its height from its wires. Every 1.0 document compiles to the same bytes: the 270-document corpus is byte-identical to 1.0.2, and fitting happens only where a document asks for it.
 
