@@ -1042,4 +1042,28 @@ C1.node -> C0.out #blue [ortho]`,
 		expect(paths[2]).toBe('M 80 280 H 116 V 160 H 178');
 		expect(paths[3]).toBe(paths[2]);
 	});
+
+	test('a repeated connection between junction ends retraces copper rather than crashing', () => {
+		/* Found by the 1.1 layout search over 3,000 dense seeds: the repeated
+		   C0-C1 connections end at junction C0, whose dot lies partway along the
+		   net's copper rather than at the end of a piece, so the path finder had
+		   no node for it and threw a TypeError — a valid document breaking the
+		   promise that only SchematicSyntaxError escapes. */
+		const result = compileSchematic(
+			`junction:C0 "R" at (360, 120) #slate
+testpoint:C1 "T" at (80, 500) #cyan
+source:C2 "V" at (220, 540) #slate [type=voltage-dc orientation=up]
+junction:C4 "x" at (220, 400) #cyan
+C1.node -> C0.node #blue [ortho]
+C4.node -> C2.positive #blue [ortho]
+C2.negative -> C0.node #blue [ortho]
+C0.node -> C1.node #blue [ortho]
+C0.node -> C2.positive #blue [ortho]`,
+			{ bounds: { width: 600, height: 650 }, title: 'junction loop', mode: 'full' }
+		);
+		const paths = traces(result.svg);
+		/* The repeat is drawn along the first connection's copper, in reverse. */
+		expect(paths).toContain('M 80 500 H 56 V 120 H 360');
+		expect(paths).toContain('M 360 120 H 56 V 500 H 80');
+	});
 });

@@ -11,10 +11,12 @@ import {
 	type QuantumGateComponent,
 	type QuantumSpecialComponent
 } from '../types.js';
+import { toMilli } from '../geom.js';
 import {
 	colorAttributes,
 	count,
 	enumOption,
+	fit,
 	fitText,
 	includesValue,
 	indexed,
@@ -41,6 +43,14 @@ export function trackCoordinate(index: number, tracks: number): number {
 	return -span / 2 + (index * span) / (tracks - 1);
 }
 
+/**
+ * Offset of rail `index` in milli-units: where a fitted gate's qubit wire
+ * arrives, or spread edge to edge as {@link trackCoordinate} has it.
+ */
+function railAt(rails: readonly number[] | undefined, index: number, tracks: number): number {
+	return rails === undefined ? trackCoordinate(index, tracks) : toMilli(rails[index]!);
+}
+
 /** Box and stub sizes of a single-qubit operator, in diagram units. */
 export function gateDimensions(component: QuantumGateComponent): { bodyWidth: number; bodyHeight: number; stubExtent: number } {
 	const details = [component.parameter, component.phase, component.matrix].filter((value): value is string => value !== undefined && value !== '');
@@ -64,8 +74,8 @@ function gatePorts(component: QuantumGateComponent): LocalPort[] {
 const operator: KindDef<QuantumGateComponent> = {
 	parse(kind, common, options, line) {
 		const detailed = kind === 'qgate' || includesValue(NAMED_QUANTUM_GATE_KINDS, kind);
-		only(options, detailed ? ['parameter', 'matrix', 'phase', 'orientation'] : ['orientation'], line);
-		const component: QuantumGateComponent = { kind: kind as QuantumGateComponent['kind'], ...common, ...orientation(options, line) };
+		only(options, detailed ? ['parameter', 'matrix', 'phase', 'orientation'] : kind === 'cnot' ? ['orientation', 'fit'] : ['orientation'], line);
+		const component: QuantumGateComponent = { kind: kind as QuantumGateComponent['kind'], ...common, ...orientation(options, line), ...fit(options, line) };
 		if (detailed) {
 			const parameter = options.get('parameter');
 			const matrix = options.get('matrix');
@@ -106,23 +116,36 @@ const operator: KindDef<QuantumGateComponent> = {
 	}
 };
 
-const CNOT_PORTS = [
-	port('in1', -42, -9, -1, 0),
-	port('in2', -42, 9, -1, 0),
-	port('out1', 42, -9, 1, 0),
-	port('out2', 42, 9, 1, 0),
-	port('control', 0, -9, 0, -1),
-	port('target', 0, 9, 0, 1)
-] as const;
+/** A CNOT's control and target rails in milli-units, control first. */
+function cnotRails(component: QuantumGateComponent): readonly [number, number] {
+	return [railAt(component.rails, 0, 2), railAt(component.rails, 1, 2)];
+}
+
+function cnotPorts(component: QuantumGateComponent): LocalPort[] {
+	const [control, target] = cnotRails(component);
+	return [
+		{ id: 'in1', x: -42_000, y: control, nx: -1, ny: 0 },
+		{ id: 'in2', x: -42_000, y: target, nx: -1, ny: 0 },
+		{ id: 'out1', x: 42_000, y: control, nx: 1, ny: 0 },
+		{ id: 'out2', x: 42_000, y: target, nx: 1, ny: 0 },
+		/* Each vertical terminal faces away from the other, whichever rail is on top. */
+		{ id: 'control', x: 0, y: control, nx: 0, ny: control > target ? 1 : -1 },
+		{ id: 'target', x: 0, y: target, nx: 0, ny: control > target ? -1 : 1 }
+	];
+}
 
 const cnot: KindDef<QuantumGateComponent> = {
 	parse: operator.parse,
-	extents: () => [42_000, 24_000],
-	ports: () => CNOT_PORTS,
-	resolve: (_, name) => CNOT_PORTS.find((entry) => entry.id === (name === 'in' ? 'in1' : name === 'out' ? 'out1' : name)),
-	draw: (_, paint, nodePaint) =>
-		`<path ${paint} d="M -42 -9 H 42 M -42 9 H 42 M 0 -9 V 9 M -7 9 H 7 M 0 2 V 16" /><circle ${nodePaint} cx="0" cy="-9" r="4" /><circle ${paint} cx="0" cy="9" r="10" />`,
-	symbol: () => 'cnot'
+	/* The target's circle reaches ten units past its rail; five more is clearance. */
+	extents: (component) => [42_000, Math.max(...cnotRails(component).map(Math.abs)) + 15_000],
+	ports: cnotPorts,
+	resolve: (component, name) => cnotPorts(component).find((entry) => entry.id === (name === 'in' ? 'in1' : name === 'out' ? 'out1' : name)),
+	draw(component, paint, nodePaint) {
+		const [control, target] = cnotRails(component);
+		const [c, t] = [n(control), n(target)];
+		return `<path ${paint} d="M -42 ${c} H 42 M -42 ${t} H 42 M 0 ${c} V ${t} M -7 ${t} H 7 M 0 ${n(target - 7_000)} V ${n(target + 7_000)}" /><circle ${nodePaint} cx="0" cy="${c}" r="4" /><circle ${paint} cx="0" cy="${t}" r="10" />`;
+	},
+	symbol: (component) => (component.rails === undefined ? 'cnot' : `cnot-${component.rails.join('_')}`)
 };
 
 /* ---- multi-track and classical primitives ---- */
@@ -150,12 +173,15 @@ function specialPorts(component: QuantumSpecialComponent): LocalPort[] {
 		default: {
 			const tracks = tracksOf(component);
 			const ports: LocalPort[] = [];
-			for (let index = 0; index < tracks; index += 1) ports.push({ id: `in${index + 1}`, x: -42_000, y: trackCoordinate(index, tracks), nx: -1, ny: 0 });
-			for (let index = 0; index < tracks; index += 1) ports.push({ id: `out${index + 1}`, x: 42_000, y: trackCoordinate(index, tracks), nx: 1, ny: 0 });
-			for (let index = 0; index < component.controls; index += 1) ports.push({ id: `control${index + 1}`, x: 0, y: trackCoordinate(index, tracks), nx: 0, ny: -1 });
-			for (let index = 0; index < component.targets; index += 1) {
-				ports.push({ id: `target${index + 1}`, x: 0, y: trackCoordinate(component.controls + index, tracks), nx: 0, ny: -1 });
-			}
+			for (let index = 0; index < tracks; index += 1) ports.push({ id: `in${index + 1}`, x: -42_000, y: railAt(component.rails, index, tracks), nx: -1, ny: 0 });
+			for (let index = 0; index < tracks; index += 1) ports.push({ id: `out${index + 1}`, x: 42_000, y: railAt(component.rails, index, tracks), nx: 1, ny: 0 });
+			/* A vertical terminal leaves upward, except on the lowest rail, where
+			   upward would run its wire through every terminal above it. */
+			let lowest = 0;
+			for (let index = 1; index < tracks; index += 1) if (railAt(component.rails, index, tracks) > railAt(component.rails, lowest, tracks)) lowest = index;
+			const vertical = (id: string, index: number): LocalPort => ({ id, x: 0, y: railAt(component.rails, index, tracks), nx: 0, ny: tracks > 1 && index === lowest ? 1 : -1 });
+			for (let index = 0; index < component.controls; index += 1) ports.push(vertical(`control${index + 1}`, index));
+			for (let index = 0; index < component.targets; index += 1) ports.push(vertical(`target${index + 1}`, component.controls + index));
 			return ports;
 		}
 	}
@@ -163,7 +189,8 @@ function specialPorts(component: QuantumSpecialComponent): LocalPort[] {
 
 const special: KindDef<QuantumSpecialComponent> = {
 	parse(kind, common, options, line) {
-		only(options, ['control', 'operator', 'controls', 'targets', 'wires', 'width', 'orientation'], line);
+		only(options, ['control', 'operator', 'controls', 'targets', 'wires', 'width', 'orientation', 'fit'], line);
+		if (options.has('fit') && !MULTI.has(kind)) throw new SchematicSyntaxError(`Option fit is not supported for ${kind}; it lines up the rails of a gate that spans several qubits.`, line);
 		if (options.has('control') && kind !== 'control' && kind !== 'controlled') throw new SchematicSyntaxError(`Option control is not supported for ${kind}.`, line);
 		if (options.has('operator') && kind !== 'controlled') throw new SchematicSyntaxError(`Option operator is not supported for ${kind}.`, line);
 		if ((options.has('controls') || options.has('targets')) && !COUNTED.has(kind)) throw new SchematicSyntaxError(`Control/target counts are not supported for ${kind}.`, line);
@@ -178,7 +205,8 @@ const special: KindDef<QuantumSpecialComponent> = {
 			targets: count(options.get('targets'), kind === 'swap' ? 2 : controlled ? 1 : 0, 'targets', line),
 			wires: count(options.get('wires'), kind === 'barrier' || kind === 'delay' ? 2 : 1, 'wires', line),
 			width: width(options.get('width'), kind === 'classical-register' ? 8 : 1, line),
-			...orientation(options, line)
+			...orientation(options, line),
+			...fit(options, line)
 		};
 		if (kind === 'classical-register' && component.width < 2) throw new SchematicSyntaxError('Classical register width must be at least 2.', line);
 		if (kind === 'control' || kind === 'controlled') component.controlType = controlType;
@@ -188,7 +216,10 @@ const special: KindDef<QuantumSpecialComponent> = {
 	},
 	extents(component) {
 		if (component.kind === 'measure') return [42_000, 34_000];
-		return [42_000, Math.max(24_000, (tracksOf(component) - 1) * 9_000 + 14_000)];
+		const tracks = tracksOf(component);
+		let reach = 0;
+		for (let index = 0; index < tracks; index += 1) reach = Math.max(reach, Math.abs(railAt(component.rails, index, tracks)));
+		return [42_000, Math.max(24_000, reach + 14_000)];
 	},
 	ports: specialPorts,
 	resolve(component, name) {
@@ -217,14 +248,17 @@ const special: KindDef<QuantumSpecialComponent> = {
 				return `<path ${paint} d="M -40 -2 H 40 M -40 2 H 40" />`;
 		}
 		const tracks = tracksOf(component);
-		const span = trackSpan(tracks);
+		const rails = Array.from({ length: tracks }, (_, index) => railAt(component.rails, index, tracks));
+		/* Unfitted, the glyph spans the track span even for a single track. */
+		const top = component.rails === undefined ? -trackSpan(tracks) / 2 : Math.min(...rails);
+		const bottom = component.rails === undefined ? trackSpan(tracks) / 2 : Math.max(...rails);
 		let lines = '';
-		for (let index = 0; index < tracks; index += 1) lines += `<path ${paint} d="M -42 ${n(trackCoordinate(index, tracks))} H 42" />`;
-		if (component.kind === 'barrier') return `${lines}<path ${paint} stroke-dasharray="4 3" d="M 0 ${n(-span / 2 - 8_000)} V ${n(span / 2 + 8_000)}" />`;
-		if (component.kind === 'delay') return `${lines}<rect ${paint} x="-12" y="${n(-span / 2 - 7_000)}" width="24" height="${n(span + 14_000)}" rx="2" />`;
+		for (const rail of rails) lines += `<path ${paint} d="M -42 ${n(rail)} H 42" />`;
+		if (component.kind === 'barrier') return `${lines}<path ${paint} stroke-dasharray="4 3" d="M 0 ${n(top - 8_000)} V ${n(bottom + 8_000)}" />`;
+		if (component.kind === 'delay') return `${lines}<rect ${paint} x="-12" y="${n(top - 7_000)}" width="24" height="${n(bottom - top + 14_000)}" rx="2" />`;
 		let marks = '';
 		for (let index = 0; index < tracks; index += 1) {
-			const y = trackCoordinate(index, tracks);
+			const y = rails[index]!;
 			if (component.kind === 'swap') marks += `<path ${paint} d="M -6 ${n(y - 6_000)} L 6 ${n(y + 6_000)} M 6 ${n(y - 6_000)} L -6 ${n(y + 6_000)}" />`;
 			else if (component.kind === 'cz') marks += `<circle ${nodePaint} cx="0" cy="${n(y)}" r="4" />`;
 			else if (index < component.controls) {
@@ -234,13 +268,14 @@ const special: KindDef<QuantumSpecialComponent> = {
 			} else if (component.kind === 'controlled' || component.kind === 'cphase') marks += `<rect ${paint} x="-10" y="${n(y - 10_000)}" width="20" height="20" rx="2" />`;
 			else marks += `<circle ${paint} cx="0" cy="${n(y)}" r="10" /><path ${paint} d="M -7 ${n(y)} H 7 M 0 ${n(y - 7_000)} V ${n(y + 7_000)}" />`;
 		}
-		return `${lines}<path ${paint} d="M 0 ${n(-span / 2)} V ${n(span / 2)}" />${marks}`;
+		return `${lines}<path ${paint} d="M 0 ${n(top)} V ${n(bottom)}" />${marks}`;
 	},
 	inner: (component) =>
 		component.kind === 'controlled' && component.operator !== undefined
 			? `<text ${colorAttributes(component.color, 'schematic-gate-symbol')} stroke="none" x="0" y="4" text-anchor="middle" font-size="11">${renderMathLabelTspans(component.operator)}</text>`
 			: '',
-	symbol: (component) => `quantum-${component.kind}-${component.controlType ?? ''}-${component.controls}-${component.targets}-${component.wires}`
+	symbol: (component) =>
+		`quantum-${component.kind}-${component.controlType ?? ''}-${component.controls}-${component.targets}-${component.wires}${component.rails === undefined ? '' : `-${component.rails.join('_')}`}`
 };
 
 export const QUANTUM_KINDS: Readonly<Record<string, KindDef<never>>> = {

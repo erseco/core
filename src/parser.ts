@@ -14,6 +14,7 @@
 import { fromMilli, parseMilli } from './geom.js';
 import { normalizeSchematicBounds, normalizeSchematicTitle, resolveSchematicLimits, type SchematicResolvedLimits } from './limits.js';
 import { validateSchematicGeometry } from './layout.js';
+import { fitComponents } from './fit.js';
 import { resolvePlacements, type PendingPlacement } from './placement.js';
 import { cacheParsedSchematicEvidence, cacheParsedSchematicRoutes } from './route-cache.js';
 import { canonicalName, KINDS } from './symbols/index.js';
@@ -62,6 +63,12 @@ function freezeDocument(document: SchematicDocument): SchematicDocument {
 			Object.freeze(component.operations);
 		}
 		if (component.kind === 'state') Object.freeze(component.details);
+		if ('rails' in component && component.rails !== undefined) Object.freeze(component.rails);
+		if ('rows' in component && component.rows !== undefined) {
+			Object.freeze(component.rows.left);
+			Object.freeze(component.rows.right);
+			Object.freeze(component.rows);
+		}
 		Object.freeze(component);
 	}
 	for (const connection of document.connections) {
@@ -672,6 +679,8 @@ function analyze(source: string, fence: SchematicFence, reporter: Reporter): Sch
 	if (reporter.failed) return undefined;
 	assignNets(valid, reporter);
 	resolveTrunks(valid, reporter);
+	if (reporter.failed) return undefined;
+	fitComponents(components, valid, (error) => reporter.report(error, 'geometry'));
 	if (reporter.failed) return undefined;
 
 	const document = { components, connections: valid } satisfies SchematicDocument;

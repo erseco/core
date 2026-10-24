@@ -141,6 +141,36 @@ H2.gnd -> GND.in #slate [ortho]`
 		source: `class:API "Compiler" at (170, 150) #blue [stereotype="entry" attributes="- limits: Limits" operations="+ compile(src): Svg;+ diagnose(src): List"]
 class:NET "Netlist" at (500, 150) #emerald [attributes="- nets: Net[];- nodes: Node[]" operations="+ verify(): Report"]
 API.right -> NET.left #slate [ortho association label="builds"]`
+	},
+	{
+		fence: 'schemd bounds="900x360" title="Fitted CNOT chain"',
+		source: `prepare:A "a" at (80, 90) #blue
+prepare:B "b" at (80, 210) #blue
+prepare:C "c" at (80, 300) #blue
+hadamard:H "H" at (240, 90) #cyan
+cnot:CX1 "CNOT" at (420, 150) #purple [fit=wires]
+cnot:CX2 "CNOT" at (600, 240) #purple [fit=wires]
+measure:M "M" at (800, 90) #emerald
+A.out -> H.in #blue [ortho]
+H.out -> CX1.in1 #cyan [ortho]
+B.out -> CX1.in2 #blue [ortho]
+CX1.out1 -> M.in #purple [ortho]
+CX1.out2 -> CX2.in1 #purple [ortho]
+C.out -> CX2.in2 #blue [ortho]`
+	},
+	{
+		fence: 'schemd bounds="900x460" title="Fitted block"',
+		source: `port:A "a" at (80, 100) #blue
+port:B "b" at (80, 200) #blue
+port:C "c" at (80, 340) #blue
+ic:U1 "Oracle" at (400, 220) #purple [left="i0,i1,i2" right="o0,o1" fit=wires]
+port:X "x" at (700, 100) #emerald
+resistor:R "R" right-of U1 by 120 aligned-y with U1.o1 at in #amber
+A.out -> U1.i0 #blue [ortho]
+B.out -> U1.i1 #blue [ortho]
+C.out -> U1.i2 #blue [ortho]
+U1.o0 -> X.in #emerald [ortho]
+U1.o1 -> R.in #amber [ortho]`
 	}
 ];
 

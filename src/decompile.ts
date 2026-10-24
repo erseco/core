@@ -46,6 +46,8 @@ export interface RecoveredComponent {
 	readonly y: number;
 	readonly line: number;
 	readonly orientation?: string;
+	/** `wires` when the part was declared `fit=wires`; its recovered position is the fitted one. */
+	readonly fit?: string;
 	readonly color: SchematicColor;
 }
 
@@ -208,6 +210,7 @@ export function parseSchematicSvg(svg: string): SchematicRecovery {
 			...(attribute(attributes, 'data-orientation') === undefined
 				? {}
 				: { orientation: attribute(attributes, 'data-orientation')! }),
+			...(attribute(attributes, 'data-fit') === undefined ? {} : { fit: attribute(attributes, 'data-fit')! }),
 			/* The vector inside the group carries the paint, not the group. */
 			color: recoverColor(svg.slice(match.index!, match.index! + 1200))
 		});
@@ -267,7 +270,11 @@ export function parseSchematicSvg(svg: string): SchematicRecovery {
 	const lines: string[] = [];
 	for (const component of components) {
 		const orientation =
-			component.orientation === undefined ? '' : ` [orientation=${component.orientation}]`;
+			component.orientation !== undefined
+				? ` [orientation=${component.orientation}]`
+				: component.fit !== undefined
+					? ` [fit=${component.fit}]`
+					: '';
 		lines.push(
 			`${component.kind}:${component.id} "${component.label}" at (${component.x}, ${component.y}) ${colorSyntax(component.color)}${orientation}`
 		);

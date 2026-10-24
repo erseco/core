@@ -352,6 +352,11 @@ export interface SchematicPlacementRelation {
 	readonly port?: string;
 	/** Author-supplied `by` distance; absence means the axis default. */
 	readonly gap?: number;
+	/**
+	 * The subject's own canonical terminal that an alignment lines up, when the
+	 * author wrote `aligned-y with B.out at in2`; absence aligns the subject's origin.
+	 */
+	readonly at?: string;
 }
 
 /** Author-facing quarter-turn orientations for direction-sensitive components. */
@@ -371,6 +376,24 @@ interface ComponentBase extends SchematicPoint {
 	color: SchematicColor;
 	/** One-based source line used for deterministic diagnostics. */
 	line: number;
+}
+
+/**
+ * How a block takes its height from its wires: `wires` lines each terminal up
+ * with the terminal wired to it, so straight wires stay straight.
+ */
+export type SchematicFit = 'wires';
+
+/**
+ * Where a fitted block's terminals landed, as offsets in diagram units from
+ * the block's centre. Present only on a part declared with `fit=wires`, once
+ * its wires are known.
+ */
+export interface SchematicFittedRows {
+	/** Left-side terminals, top to bottom. */
+	readonly left: readonly number[];
+	/** Right-side terminals, top to bottom. */
+	readonly right: readonly number[];
 }
 
 /** Shared metadata for symbols whose canonical geometry supports quarter turns. */
@@ -463,6 +486,10 @@ export interface DigitalComponent extends DirectionalComponentBase {
 	/** Deterministic body dimensions used by ports, obstacles, and SVG generation. */
 	bodyWidth: number;
 	bodyHeight: number;
+	/** Declared `fit=wires`: the side terminals follow their wires. */
+	fit?: SchematicFit;
+	/** Where the side terminals landed once fitted. */
+	rows?: SchematicFittedRows;
 }
 
 /** Parsed native or user-labelled quantum operator. */
@@ -475,6 +502,10 @@ export interface QuantumGateComponent extends DirectionalComponentBase {
 	matrix?: string;
 	/** Optional phase expression. */
 	phase?: string;
+	/** Declared `fit=wires` (CNOT only): each rail follows its qubit's wire. */
+	fit?: SchematicFit;
+	/** CNOT rail offsets from the centre, control first, once fitted. */
+	rails?: readonly number[];
 }
 
 /** Non-unitary, multi-wire, control, timing, or classical quantum-circuit primitive. */
@@ -492,6 +523,10 @@ export interface QuantumSpecialComponent extends DirectionalComponentBase {
 	wires: number;
 	/** Classical register width, or one for scalar quantum/classical nodes. */
 	width: number;
+	/** Declared `fit=wires` on a multi-track gate: each rail follows its qubit's wire. */
+	fit?: SchematicFit;
+	/** Rail offsets from the centre in track order, once fitted. */
+	rails?: readonly number[];
 }
 
 /** Pin names registered on each side of a polymorphic integrated circuit. */
@@ -516,6 +551,10 @@ export interface IcComponent extends DirectionalComponentBase {
 	bodyWidth: number;
 	/** Computed body height derived from the longest pin list. */
 	bodyHeight: number;
+	/** Declared `fit=wires`: the left and right pins follow their wires. */
+	fit?: SchematicFit;
+	/** Where the left and right pins landed once fitted. */
+	rows?: SchematicFittedRows;
 }
 
 /** Descriptive alias for a parsed integrated-circuit block. */

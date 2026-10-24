@@ -191,6 +191,8 @@ export {
 	type SchematicFence,
 	type SchematicLimitOptions,
 	type SchematicOrientation,
+	type SchematicFit,
+	type SchematicFittedRows,
 	type SchematicPlacementKind,
 	type SchematicPlacementRelation,
 	type SchematicSignalMarker,

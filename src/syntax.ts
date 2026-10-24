@@ -74,7 +74,7 @@ const HEAD = new RegExp(`^(${ID}):(${ID})\\s+"([^"]+)"\\s+(.+)$`, 'd');
 const CONNECTION = new RegExp(`^(${ID})\\.(${PORT})\\s*->\\s*(${ID})\\.(${PORT})\\s+(.+)$`, 'd');
 /* One relation each, sticky so it matches exactly where the last one ended. */
 const DIRECTION = new RegExp(`(right-of|left-of|above|below)\\s+(${ID})(?:\\.(${PORT}))?(?:\\s+by\\s+(${DECIMAL}))?(?:\\s+|$)`, 'yd');
-const ALIGNMENT = new RegExp(`(aligned-x|aligned-y)\\s+with\\s+(${ID})(?:\\.(${PORT}))?(?:\\s+|$)`, 'yd');
+const ALIGNMENT = new RegExp(`(aligned-x|aligned-y)\\s+with\\s+(${ID})(?:\\.(${PORT}))?(?:\\s+at\\s+(${PORT}))?(?:\\s+|$)`, 'yd');
 
 const SPACE = /\s/;
 
@@ -111,7 +111,12 @@ function placement(text: string, start: number): { relations: SchematicPlacement
 		ALIGNMENT.lastIndex = cursor;
 		const alignment = ALIGNMENT.exec(text);
 		if (alignment === null) return { relations, references, tail: cursor };
-		relations.push({ kind: alignment[1] as SchematicPlacementRelation['kind'], ref: alignment[2]!, ...(alignment[3] === undefined ? {} : { port: alignment[3] }) });
+		relations.push({
+			kind: alignment[1] as SchematicPlacementRelation['kind'],
+			ref: alignment[2]!,
+			...(alignment[3] === undefined ? {} : { port: alignment[3] }),
+			...(alignment[4] === undefined ? {} : { at: alignment[4] })
+		});
 		references.push(reference(alignment));
 		cursor = ALIGNMENT.lastIndex;
 	}
