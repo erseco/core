@@ -499,8 +499,8 @@ const mutants = [
 	{
 		name: "a loop is drawn along copper the net already has",
 		file: "src/route.ts",
-		from: "const along = loops.length === 0 ? undefined : this.#copperPaths(unit);",
-		to: "const along = undefined;",
+		from: "const along =\n\t\t\tloops.length === 0\n\t\t\t\t? undefined",
+		to: "const along =\n\t\t\ttrue\n\t\t\t\t? undefined",
 		tests: ["tests/layout.test.ts", "tests/regressions.test.ts", "tests/route.test.ts", "tests/trunk.test.ts"]
 	},
 	{
@@ -718,6 +718,97 @@ const mutants = [
 		file: "src/route.ts",
 		from: "\t\t\t\t\t\tconnected.add(pointKey(end.point));",
 		to: "\t\t\t\t\t\tvoid end;",
+		tests: ["tests/regressions.test.ts"]
+	},
+	{
+		name: "a fitted gate never reads a part still to fit",
+		file: "src/fit.ts",
+		from: "far.componentId === component.id || pending.has(far.componentId)) continue;",
+		to: "far.componentId === component.id) continue;",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "a pin wired only to its own part is not lined up with itself",
+		file: "src/fit.ts",
+		from: "if (near === undefined || far.componentId === component.id || pending.has",
+		to: "if (near === undefined || pending.has",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "the nearest partner decides",
+		file: "src/fit.ts",
+		from: "\t\t\tcandidate.dx < best.dx ||",
+		to: "\t\t\tcandidate.dx > best.dx ||",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "equally near partners go to the higher one",
+		file: "src/fit.ts",
+		from: "(candidate.y < best.y ||",
+		to: "(candidate.y > best.y ||",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "a rail prefers its input's wire to its output's",
+		file: "src/fit.ts",
+		from: "arrival(component, input.id, connections, byId, pending) ?? arrival(component, outputs[index]!.id, connections, byId, pending)",
+		to: "arrival(component, outputs[index]!.id, connections, byId, pending) ?? arrival(component, input.id, connections, byId, pending)",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "unwired terminals before the first wired one extend upward",
+		file: "src/fit.ts",
+		from: "if (index < first) return known[first]! - (first - index) * pitch;",
+		to: "if (index < first) return known[first]! + (first - index) * pitch;",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "rails the least gap apart are accepted",
+		file: "src/fit.ts",
+		from: "if (lower.value - upper.value < FIT_GAP * 1000) {",
+		to: "if (lower.value - upper.value <= FIT_GAP * 1000) {",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "pins the least gap apart are accepted",
+		file: "src/fit.ts",
+		from: "if (lower - upper >= FIT_GAP * 1000) continue;",
+		to: "if (lower - upper > FIT_GAP * 1000) continue;",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "a fitted part is centred between its wires",
+		file: "src/fit.ts",
+		from: "\tconst centre = roundDiv(order[0]!.value + order.at(-1)!.value, 2);",
+		to: "\tconst centre = order[0]!.value;",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "a fitted body never shrinks below its usual height",
+		file: "src/fit.ts",
+		from: "const height = Math.max(component.bodyHeight * 1000, 2 * (reach + pitch));",
+		to: "const height = 2 * (reach + pitch);",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "an alignment at a terminal lines that terminal up",
+		file: "src/placement.ts",
+		from: "return { x: position.x, y: reference.originY - (relation.at === undefined ? 0 : terminalAtOrigin(relation.at).y) };",
+		to: "return { x: position.x, y: reference.originY };",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "fitted gates with different rails never share one drawing",
+		file: "src/symbols/quantum.ts",
+		from: "symbol: (component) => (component.rails === undefined ? 'cnot' : `cnot-${component.rails.join('_')}`)",
+		to: "symbol: () => 'cnot'",
+		tests: ["tests/fit.test.ts"]
+	},
+	{
+		name: "a junction end partway along copper is a node of the copper graph",
+		file: "src/route.ts",
+		from: "\t\tfor (const point of ends) points.set(pointKey(point), point);",
+		to: "\t\tvoid ends;",
 		tests: ["tests/regressions.test.ts"]
 	}
 ];

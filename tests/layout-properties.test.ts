@@ -49,10 +49,14 @@ const KINDS: readonly (readonly [string, string])[] = [
 	['nand', ''], ['not', ''], ['flipflop', '[type=d]'], ['mux', '[inputs=4]'], ['register', ''], ['ic', '[left="A,B,C" right="Y,Z"]'],
 	['amplifier', '[type=opamp]'], ['hadamard', ''], ['cnot', ''], ['measure', ''], ['class', '-'], ['state', '-'], ['testpoint', '-']
 ];
+/* Parts declared fit=wires, mixed in for the fitted samples; never rotated. */
+const FITTED: readonly (readonly [string, string])[] = [
+	['cnot', '[fit=wires]'], ['ic', '[left="A,B,C" right="Y,Z" fit=wires]'], ['mux', '[inputs=3 fit=wires]'], ['swap', '[fit=wires]']
+];
 const LABELS = ['R', 'Load', '1 k\\Omega', 'Microcontroller', 'V_{out}', 'x', 'Sensor input', 'Q'];
 const UML = new Set(['class', 'state', 'action']);
 
-function generate(seed: number, dense: boolean): { source: string; fence: { bounds: { width: number; height: number }; title: string }; lines: string[]; wires: string[] } | undefined {
+function generate(seed: number, dense: boolean, fit = false): { source: string; fence: { bounds: { width: number; height: number }; title: string }; lines: string[]; wires: string[] } | undefined {
 	const next = random(seed);
 	const pick = <T,>(list: readonly T[]): T => list[Math.floor(next() * list.length)]!;
 	const width = 600 + Math.floor(next() * 5) * 200;
@@ -60,11 +64,11 @@ function generate(seed: number, dense: boolean): { source: string; fence: { boun
 	const count = 3 + Math.floor(next() * 9);
 	const lines: string[] = [];
 	for (let index = 0; index < count; index += 1) {
-		const [kind, option] = pick(KINDS);
+		const [kind, option] = pick(fit ? [...KINDS, ...FITTED] : KINDS);
 		const x = 80 + Math.floor(next() * ((width - 160) / 20)) * 20;
 		const y = 80 + Math.floor(next() * ((height - 160) / 20)) * 20;
 		let options = option === '-' ? '' : option;
-		if (option !== '-' && next() < 0.5) {
+		if (option !== '-' && next() < 0.5 && !option.includes('fit=')) {
 			const turn = `orientation=${pick(['right', 'down', 'left', 'up'])}`;
 			options = options === '' ? `[${turn}]` : options.replace(']', ` ${turn}]`);
 		}
@@ -184,9 +188,11 @@ function violations(document: SchematicDocument, routes: readonly RoutedConnecti
 		}
 		for (const component of document.components) {
 			const body = componentObstacleRectangle(component, 0);
-			const own = component.id === connection.from.componentId || component.id === connection.to.componentId;
+			/* A junction is where its net's wires meet, so its own net may pass straight through its dot. */
+			const meeting = component.kind === 'junction' && document.connections.some((c, j) => net[j] === net[i] && (c.from.componentId === component.id || c.to.componentId === component.id));
+			const own = meeting || component.id === connection.from.componentId || component.id === connection.to.componentId;
 			a.forEach((s, k) => {
-				if (enters(s, body) && !(own && (k === 0 || k === a.length - 1))) problems.push(`wire ${i} runs through ${component.id}`);
+				if (enters(s, body) && !(own && (meeting || k === 0 || k === a.length - 1))) problems.push(`wire ${i} runs through ${component.id}`);
 			});
 			for (const port of enumerateComponentPorts(component)) {
 				if (wired.has(`${component.id}.${port.id}`)) continue;
@@ -244,14 +250,16 @@ function traceSet(svg: string): string {
 }
 
 describe.each([
-	['sparse documents', false, 1, 400],
-	['dense nets', true, 1, 250]
-] as const)('%s', (_, dense, from, to) => {
+	['sparse documents', false, 1, 400, false],
+	['dense nets', true, 1, 250, false],
+	['sparse documents with fitted parts', false, 1, 400, true],
+	['dense nets with fitted parts', true, 1, 400, true]
+] as const)('%s', (_, dense, from, to, fit) => {
 	test('every compiled drawing keeps the draughting invariants, and its order does not matter', () => {
 		let compiled = 0;
 		const failures: string[] = [];
 		for (let seed = from; seed <= to; seed += 1) {
-			const generated = generate(seed, dense);
+			const generated = generate(seed, dense, fit);
 			if (generated === undefined) continue;
 			let result: ReturnType<typeof compileSchematic>;
 			try {

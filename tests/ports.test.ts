@@ -15,6 +15,9 @@
  *   slot of its own. A flip-flop accepts only its own variant's letters, where
  *   0.8 drew any of them on its first input, and a register lists the in2, in3
  *   and out2 terminals 0.8 drew and accepted but did not enumerate.
+ * - 1.1: a multi-track gate's vertical terminal on its lowest rail faces down.
+ *   0.8 and 1.0 pointed every one up, so a wire to the lowest one ran through
+ *   each terminal above it.
  */
 import { describe, expect, test } from 'vitest';
 

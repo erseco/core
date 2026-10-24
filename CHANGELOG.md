@@ -2,6 +2,44 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
+## [1.1.0] - Unreleased
+
+1.1 lets a part take its height from its wires. Every 1.0 document compiles to the same bytes: the 270-document corpus is byte-identical to 1.0.2, and fitting happens only where a document asks for it.
+
+### Added
+
+- **`fit=wires` lines a part's terminals up with the wires that reach them.** A block with several terminals on a side has a fixed pitch, so wires bent to meet it: two qubit rails 120 units apart jogged in to a CNOT whose rails are 18 apart, and out again, and three Hadamard outputs fed an oracle block through two 100-unit detours. On a part declared `fit=wires`, each terminal takes the height of the terminal wired to it, the part is centred between them, and a block's body grows to hold them, so the wires arrive straight. Across the Bell, teleportation, Grover, error-correction and phase-kickback circuits on the schemd site, 20 bends and 13 diagonal wire segments become none.
+  - Multi-qubit gates (`cnot`, `cz`, `cphase`, `toffoli`, `controlled`, `swap`, `barrier`, `delay`) fit one rail per qubit, from its input's wire or, when that is unwired, its output's. Rails may come in any order, so a CNOT whose control sits below its target needs no special syntax, and its two vertical terminals face away from each other either way.
+  - ICs and digital blocks fit their left and right terminals, each side in its declared order; top and bottom terminals keep their places along the body. The body never shrinks below its usual height.
+  - A terminal with no wire is spaced from its wired neighbours at the part's usual pitch; a part with nothing wired to those terminals keeps its usual shape. A terminal wired to several parts follows the nearest, then the higher, then the one first by name.
+  - Fitted parts settle left to right, then top to bottom, then by id, and each reads only the parts settled before it — so a chain of CNOTs fits from its first gate, and the drawing never depends on the order the lines were written in.
+  - A fit that cannot be made is reported with the height that would allow it: `U1 cannot line up q with its wire: it arrives 10 units below p's, and pins need at least 16. Move the wire on q to y >= 216, or remove fit=wires.` Terminals must be at least 16 units apart, and a block's must arrive in the order its pins are declared.
+  - `fit=wires` cannot be combined with `orientation`, and is rejected on parts with one terminal per side.
+  - The AST records the result: `rails` on a fitted quantum gate, `rows` on a fitted block, as offsets from the part's centre. `full`-mode markup carries `data-fit`, and `parseSchematicSvg` reads it back as `[fit=wires]`.
+- **An alignment can line up a terminal rather than a centre.** `aligned-y with H2.out at in2` places a part so that its own `in2` sits level with `H2.out`; `aligned-x … at PORT` does the same across. The terminal is folded to its canonical name, so `at out` on a gate is recorded as `out1`, and one the part does not have is reported: `R1 has no terminal named nowhere to line up with G1. Name one of R1's terminals, or remove at nowhere to align its centre.` `SchematicPlacementRelation.at` carries it.
+
+### Fixed
+
+- **A repeated connection between junction ends no longer crashes the compiler.** When a net's copper ran straight through a junction part and the same two ends were connected again, the router looked for that junction among the ends of the copper's pieces, found nothing, and threw a `TypeError` — a valid document breaking the promise that only `SchematicSyntaxError` escapes. The junction is now a node of the copper it sits on, and the repeat is drawn along that copper. Found by the property search below, over 3,000 dense seeds; present since 1.0.
+- **The vertical terminal on a multi-track gate's lowest rail faces down.** Every control and target terminal of `cz`, `cphase`, `toffoli`, `controlled` and `swap` faced up, so a wire to the one on the lowest rail ran through each terminal above it — `target2` of a swap through `target1`. A CNOT's target already faced down. This changes that terminal's `normal` in `resolvePortGeometry`, the one terminal geometry that differs from the recorded 0.8 fixture besides those listed for 1.0; no corpus document wires one.
+
+### Size
+
+- **44,602 B gzip and 38,793 B brotli-11 for the compile path, 1,837 B over 1.0.2.** About 1,450 B is the code of fitting, terminal alignment and the two fixes above, and 386 B the seven new diagnostics, measured by stubbing them. `fit` is an option every kind's parser reads and fitting runs in `parseSchematic`, so it cannot tree-shake out. The budgets rise to 44 KiB gzip and 38.5 KiB brotli-11 for the compile path and 47 KiB and 41 KiB for the package.
+
+### Verified
+
+- **100% statement, branch, function and line coverage over 694 tests**, 34 of them on fitting and alignment.
+- **115 of 115 mutants are killed.** Thirteen are new: a fitted part reading a part still to fit, the nearest-partner and higher-partner tie-breaks, a rail preferring its input's wire, the fill direction before the first wired terminal, both least-gap boundaries, centring, the body's floor, terminal alignment, rail-keyed symbol sharing, and the copper-graph node.
+- **The layout property search runs with fitted parts.** Its fixed sample now includes fitted CNOTs, swaps, ICs and muxes. Across 5,000 sparse and 3,000 dense fitted seeds the drawings keep every invariant; the search found the swap and CNOT terminal facings above, which are fixed. It also stopped flagging a net's own wires passing through its own junction part — the meeting point 1.0.2 made legal — which its fixed sample had never reached.
+- **The contract fuzzer starts from fitted documents too.** 200,000 cases, including mutations of a fitted CNOT chain and a fitted block with terminal alignment, found no contract violation.
+- The corpus is byte-identical to 1.0.2.
+
+### Known limitations
+
+- **Placement measures a fitted part at its unfitted size.** Relative placement runs before fitting, so a part placed beside or against a fitted one is measured from its usual shape. Place neighbours of a fitted part with `at (x, y)`, or leave room for it to grow.
+- **Two wires of one net can occasionally overlap on one run.** The wider property search found it at two of 8,000 unfitted seeds — once for two connections joined only by a shared `net=` name, once for three wires reaching one capacitor's pin — and 1.0.2 draws both the same. The drawing still connects what it should.
+
 ## [1.0.2] - 2026-10-18
 
 ### Fixed

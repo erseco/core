@@ -90,8 +90,22 @@ const BUDGETS = [
 		 * that name both parts, one bridge where a connection is written twice,
 		 * and bridges that stop short of a junction.
 		 */
-		maxGzipBytes: 42 * 1024,
-		maxBrotliBytes: 36.5 * 1024
+		/*
+		 * 44 KiB from 42 in 1.1, measured against the 1.0.2 build: 42,765 B to
+		 * 44,602 B gzip, 37,207 B to 38,793 B brotli-11. `fit=wires` is about
+		 * 1,450 B of code — reading each terminal's wire, filling the unwired
+		 * ones, centring the part, and drawing rails and pins from where they
+		 * landed — together with `aligned-y with B.out at in2`, the copper-graph
+		 * node that stops a repeated junction connection from crashing, and the
+		 * lowest rail's terminal facing down. 386 B is the seven diagnostics that
+		 * say which terminal cannot line up and the height that would let it,
+		 * measured by stubbing them in a scratch tree. `fit` is an option every
+		 * kind's parser reads, and fitting runs in `parseSchematic`, so it cannot
+		 * tree-shake out of this path; a document with no fitted part skips the
+		 * pass after one filter.
+		 */
+		maxGzipBytes: 44 * 1024,
+		maxBrotliBytes: 38.5 * 1024
 	},
 	{
 		label: 'Package bundle (every public export)',
@@ -101,9 +115,11 @@ const BUDGETS = [
 		/* 39 KiB from 37 in 0.8: the 116 B left over could not hold trunks, and
 		   the decompiler reads them back too. 41 KiB from 39 in 0.8, for sub-circuits. */
 		/* 43 KiB from 41 in 1.0, for the same machinery plus `diagnoseSchematic`;
-		   45 KiB for the measured text and layout fixes above. */
-		maxGzipBytes: 45 * 1024,
-		maxBrotliBytes: 39 * 1024
+		   45 KiB for the measured text and layout fixes above. 47 KiB in 1.1, for
+		   fitting and terminal alignment as above, and the decompiler reading
+		   `fit=wires` back (45,948 B to 47,690 B gzip). */
+		maxGzipBytes: 47 * 1024,
+		maxBrotliBytes: 41 * 1024
 	}
 ];
 

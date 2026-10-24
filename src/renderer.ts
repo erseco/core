@@ -644,7 +644,7 @@ function componentMarkup(
 	const vectorTransform = rotation === 0 ? '' : ` transform="rotate(${rotation})"`;
 	const styles = mode === 'embedded-css' || mode === 'full';
 	const dataAttributes = nodeHooks
-		? ` data-node-id="${id}" data-node-kind="${component.kind}" data-node-label="${label}" data-component="${id}" data-kind="${component.kind}" data-source-line="${component.line}"${'orientation' in component && component.orientation !== undefined ? ` data-orientation="${component.orientation}"` : ''}`
+		? ` data-node-id="${id}" data-node-kind="${component.kind}" data-node-label="${label}" data-component="${id}" data-kind="${component.kind}" data-source-line="${component.line}"${'orientation' in component && component.orientation !== undefined ? ` data-orientation="${component.orientation}"` : ''}${'fit' in component && component.fit !== undefined ? ` data-fit="${component.fit}"` : ''}`
 		: '';
 	let accessibility = '';
 	if (mode === 'full') {

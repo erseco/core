@@ -20,8 +20,11 @@ import {
 	SchematicSyntaxError,
 	type SchematicColor,
 	type SchematicComponent,
+	type SchematicFit,
 	type SchematicOrientation
 } from '../types.js';
+
+const SCHEMATIC_FITS = ['wires'] as const;
 
 /** One terminal in the symbol's own frame: position and outward normal. */
 export interface LocalPort {
@@ -159,6 +162,20 @@ export function width(value: string | undefined, fallback: number, line: number)
 export function orientation(options: ReadonlyMap<string, string>, line: number): { orientation?: SchematicOrientation } {
 	const value = options.get('orientation');
 	return value === undefined ? {} : { orientation: enumOption(value, 'right', SCHEMATIC_ORIENTATIONS, 'orientation', line) };
+}
+
+/**
+ * An optional `fit=wires`, materialised only when the author wrote one. Fitting
+ * lines terminals up along the vertical, so a rotated part cannot take it.
+ */
+export function fit(options: ReadonlyMap<string, string>, line: number): { fit?: SchematicFit } {
+	const value = options.get('fit');
+	if (value === undefined) return {};
+	const chosen = enumOption(value, 'wires', SCHEMATIC_FITS, 'fit', line);
+	if (options.has('orientation')) {
+		throw new SchematicSyntaxError('fit=wires lines terminals up with their wires vertically; remove orientation or fit.', line, undefined, 'option');
+	}
+	return { fit: chosen };
 }
 
 /**

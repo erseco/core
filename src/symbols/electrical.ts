@@ -4,6 +4,7 @@
  *
  * @module
  */
+import { toMilli } from '../geom.js';
 import { escapeXml } from '../xml.js';
 import { renderMathLabelTspans } from '../math-label.js';
 import {
@@ -33,6 +34,7 @@ import {
 	colorAttributes,
 	distributed,
 	enumOption,
+	fit,
 	fitText,
 	n,
 	named,
@@ -379,8 +381,9 @@ export function icPin(component: IcComponent, side: Side, index: number): LocalP
 	const w = component.bodyWidth * 1000;
 	const h = component.bodyHeight * 1000;
 	const [nx, ny] = NORMALS[side];
+	const fitted = side === 'left' || side === 'right' ? component.rows?.[side][index] : undefined;
 	return side === 'left' || side === 'right'
-		? { id: pins[index]!, x: nx * (w / 2 + 16_000), y: distributed(index, pins.length, h), nx, ny }
+		? { id: pins[index]!, x: nx * (w / 2 + 16_000), y: fitted === undefined ? distributed(index, pins.length, h) : toMilli(fitted), nx, ny }
 		: { id: pins[index]!, x: distributed(index, pins.length, w), y: ny * (h / 2 + 16_000), nx, ny };
 }
 
@@ -390,7 +393,7 @@ function icPorts(component: IcComponent): LocalPort[] {
 
 const ic: KindDef<IcComponent> = {
 	parse(_, common, options, line) {
-		only(options, ['left', 'right', 'top', 'bottom', 'orientation'], line);
+		only(options, ['left', 'right', 'top', 'bottom', 'orientation', 'fit'], line);
 		const registered = new Set<string>();
 		const side = (name: Side): readonly string[] => {
 			const source = options.get(name);
@@ -413,7 +416,8 @@ const ic: KindDef<IcComponent> = {
 			pins,
 			bodyWidth: Math.max(88, Math.max(pins.top.length, pins.bottom.length) * 22 + 24),
 			bodyHeight: Math.max(64, Math.max(pins.left.length, pins.right.length) * 18 + 24),
-			...orientation(options, line)
+			...orientation(options, line),
+			...fit(options, line)
 		};
 	},
 	extents: (component) => [component.bodyWidth * 500 + 16_000, component.bodyHeight * 500 + 16_000],
@@ -444,7 +448,7 @@ const ic: KindDef<IcComponent> = {
 				const labelX = n(sign * (w / 2 - 5_000));
 				const fitted = Math.max(8, component.bodyWidth / 2 - 10);
 				list.forEach((pin, index) => {
-					const y = distributed(index, list.length, h);
+					const { y } = icPin(component, side, index);
 					pins += `<path ${paint} d="M ${head} ${n(y)} H ${tail}" /><text class="schematic-pin-label" ${TEXT_PAINT} x="${labelX}" y="${n(y + 3_000)}" text-anchor="${side === 'left' ? 'start' : 'end'}" font-size="10"${fitText(pin, fitted, 10)}>${escapeXml(pin)}</text>`;
 				});
 			} else {

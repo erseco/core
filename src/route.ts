@@ -757,7 +757,13 @@ class Router {
 		/* A connection both of whose ends the tree already joins adds nothing
 		   electrically: it is drawn along the copper that joins them, so it adds
 		   no ink, no junction and no crossing. */
-		const along = loops.length === 0 ? undefined : this.#copperPaths(unit);
+		const along =
+			loops.length === 0
+				? undefined
+				: this.#copperPaths(
+						unit,
+						loops.flatMap((index) => [this.#input.wires[index]!.from.point, this.#input.wires[index]!.to.point])
+					);
 		for (const index of loops) {
 			const wire = this.#input.wires[index]!;
 			const path = along!(wire.from.point, wire.to.point);
@@ -769,14 +775,17 @@ class Router {
 	}
 
 	/**
-	 * A finder for the shortest way along a unit's copper between two points,
+	 * A finder for the shortest way along a unit's copper between two of `ends`,
 	 * through every junction the copper has; `undefined` where it does not join
 	 * them. The graph is built once for all the unit's redundant connections.
 	 */
-	#copperPaths(unit: Unit): (from: IPoint, to: IPoint) => IPoint[] | undefined {
+	#copperPaths(unit: Unit, ends: readonly IPoint[]): (from: IPoint, to: IPoint) => IPoint[] | undefined {
 		const pieces = this.#unitCopper[unit.index]!;
 		const points = new Map<string, IPoint>();
 		for (const piece of pieces) for (const point of [piece.a, piece.b]) points.set(pointKey(point), point);
+		/* The ends asked about are nodes too: a junction the copper runs straight
+		   through sits partway along a piece, not at either end of one. */
+		for (const point of ends) points.set(pointKey(point), point);
 		/* Split every piece at each point lying on it, so T-junctions are nodes. */
 		const edges = new Map<string, { to: string; length: number }[]>();
 		const link = (a: IPoint, b: IPoint) => {

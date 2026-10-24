@@ -131,7 +131,13 @@ function referenceGeometry(
  * measured once at the origin by the caller and passed in, since they do not
  * depend on where the subject ends up.
  */
-function applyRelation(position: IPoint, relation: SchematicPlacementRelation, reference: ReturnType<typeof referenceGeometry>, selfAtOrigin: MilliRect): IPoint {
+function applyRelation(
+	position: IPoint,
+	relation: SchematicPlacementRelation,
+	reference: ReturnType<typeof referenceGeometry>,
+	selfAtOrigin: MilliRect,
+	terminalAtOrigin: (port: string) => IPoint
+): IPoint {
 	/* Every term is an integer number of milli-units, so a relation and its
 	   mirror image land exactly opposite each other. */
 	const gap =
@@ -147,11 +153,13 @@ function applyRelation(position: IPoint, relation: SchematicPlacementRelation, r
 			return { x: position.x, y: reference.maxY + gap - selfAtOrigin.minY };
 		case 'above':
 			return { x: position.x, y: reference.minY - gap - selfAtOrigin.maxY };
+		/* `at PORT` lines that terminal up rather than the origin: the origin lands
+		   wherever puts the terminal level with the reference. */
 		case 'aligned-x':
-			return { x: reference.originX, y: position.y };
+			return { x: reference.originX - (relation.at === undefined ? 0 : terminalAtOrigin(relation.at).x), y: position.y };
 		/* v8 ignore next -- the parser admits no seventh kind; this is the pair to aligned-x. */
 		default:
-			return { x: position.x, y: reference.originY };
+			return { x: position.x, y: reference.originY - (relation.at === undefined ? 0 : terminalAtOrigin(relation.at).y) };
 	}
 }
 
@@ -266,8 +274,23 @@ export function resolvePlacements(
 				);
 				continue entries;
 			}
+			let at: string | undefined;
+			if (relation.at !== undefined) {
+				try {
+					at = canonicalPortName(component, relation.at);
+					resolvePortPoint(component, at);
+				} catch {
+					fail(
+						entry,
+						`${component.id} has no terminal named ${relation.at} to line up with ${relation.ref}. Name one of ${component.id}'s terminals, or remove at ${relation.at} to align its centre.`,
+						index
+					);
+					continue entries;
+				}
+			}
+			const own = at === undefined ? relation : { ...relation, at };
 			if (relation.port === undefined) {
-				canonical.push(relation);
+				canonical.push(own);
 				continue;
 			}
 			let port: string;
@@ -285,7 +308,7 @@ export function resolvePlacements(
 				);
 				continue entries;
 			}
-			canonical.push({ ...relation, port });
+			canonical.push({ ...own, port });
 		}
 		normalized.set(component.id, canonical);
 	}
@@ -341,7 +364,10 @@ export function resolvePlacements(
 		let position: IPoint = { x: seed.originX, y: seed.originY };
 		let chain = 0;
 		for (const relation of relations) {
-			position = applyRelation(position, relation, referenceGeometry(byId.get(relation.ref)!, relation), atOrigin);
+			position = applyRelation(position, relation, referenceGeometry(byId.get(relation.ref)!, relation), atOrigin, (port) => {
+				const point = resolvePortPoint({ ...component, x: 0, y: 0 } as SchematicComponent, port);
+				return { x: toMilli(point.x), y: toMilli(point.y) };
+			});
 			chain = Math.max(chain, (depth.get(relation.ref) ?? 0) + 1);
 		}
 		if (chain > placementDepth) {

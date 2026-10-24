@@ -3,6 +3,7 @@
  *
  * @module
  */
+import { toMilli } from '../geom.js';
 import {
 	ADDER_TYPES,
 	BUFFER_TYPES,
@@ -19,6 +20,7 @@ import {
 	count,
 	distributed,
 	enumOption,
+	fit,
 	indexed,
 	n,
 	only,
@@ -228,13 +230,13 @@ function digitalPorts(component: DigitalComponent): LocalPort[] {
 	const { left, right, bottom, top } = digitalSides(component);
 	const w = component.bodyWidth * 1000;
 	const h = component.bodyHeight * 1000;
-	const across = (names: readonly string[], x: number, nx: number) =>
-		names.map((id, index) => ({ id, x, y: distributed(index, names.length, h), nx, ny: 0 }));
+	const across = (names: readonly string[], x: number, nx: number, fitted: readonly number[] | undefined) =>
+		names.map((id, index) => ({ id, x, y: fitted === undefined ? distributed(index, names.length, h) : toMilli(fitted[index]!), nx, ny: 0 }));
 	const along = (names: readonly string[], y: number, ny: number) =>
 		names.map((id, index) => ({ id, x: distributed(index, names.length, w), y, nx: 0, ny }));
 	return [
-		...across(left, -(w / 2 + 16_000), -1),
-		...across(right, w / 2 + 16_000, 1),
+		...across(left, -(w / 2 + 16_000), -1, component.rows?.left),
+		...across(right, w / 2 + 16_000, 1, component.rows?.right),
 		...along(bottom, h / 2 + 16_000, 1),
 		...along(top, -(h / 2 + 16_000), -1)
 	];
@@ -261,7 +263,10 @@ const DIGITAL_LABELS: Readonly<Partial<Record<DigitalComponent['kind'], string>>
 const digital: KindDef<DigitalComponent> = {
 	parse(kind, common, options, line) {
 		const typed = kind as DigitalComponent['kind'];
-		only(options, ['type', 'inputs', 'outputs', 'width', 'orientation'], line);
+		only(options, ['type', 'inputs', 'outputs', 'width', 'orientation', 'fit'], line);
+		if (options.has('fit') && (typed === 'buffer' || typed === 'logic' || typed === 'clock')) {
+			throw new SchematicSyntaxError(`Option fit is not supported for ${typed}; it lines up the terminals of a block with several on one side.`, line);
+		}
 		const [defaultInputs, defaultOutputs] = DIGITAL_DEFAULTS[typed];
 		let inputs = count(options.get('inputs'), defaultInputs === 0 ? 1 : defaultInputs, 'inputs', line);
 		let outputs = count(options.get('outputs'), defaultOutputs, 'outputs', line);
@@ -289,7 +294,8 @@ const digital: KindDef<DigitalComponent> = {
 			width: bits,
 			bodyWidth: typed === 'buffer' || typed === 'logic' || typed === 'clock' ? 56 : 84,
 			bodyHeight: Math.max(52, Math.max(inputs, outputs) * 16 + 20),
-			...orientation(options, line)
+			...orientation(options, line),
+			...fit(options, line)
 		};
 		if (variant !== undefined) component.variant = variant as NonNullable<DigitalComponent['variant']>;
 		return component;
@@ -329,7 +335,9 @@ const digital: KindDef<DigitalComponent> = {
 		return value === '' ? '' : `<text ${colorAttributes(component.color, 'schematic-gate-symbol')} stroke="none" x="0" y="4" text-anchor="middle" font-size="11">${value}</text>`;
 	},
 	symbol: (component) =>
-		`digital-${component.kind}-${component.variant ?? ''}-${component.inputs}-${component.outputs}-${component.bodyWidth}-${component.bodyHeight}`
+		`digital-${component.kind}-${component.variant ?? ''}-${component.inputs}-${component.outputs}-${component.bodyWidth}-${component.bodyHeight}${
+			component.rows === undefined ? '' : `-${component.rows.left.join('_')}-${component.rows.right.join('_')}`
+		}`
 };
 
 export const LOGIC_KINDS: Readonly<Record<string, KindDef<never>>> = {
