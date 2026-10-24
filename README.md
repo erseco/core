@@ -61,6 +61,14 @@ U1.mid -> ADC.in #blue [ortho]
 
 A net that reaches several terminals is drawn as a tree: each further wire leaves the copper its net already has, with a junction dot, instead of running back to its own pin.
 
+A gate or block that spans several wires can take its height from them. `fit=wires` lines each of its terminals up with the terminal wired to it and centres the part between them, so a CNOT's rails sit on its qubits and an IC's pins on the wires that feed them — no jogs. A part placed by relation can line up one of its own terminals instead of its centre:
+
+```text
+cnot:CX "CNOT" at (460, 150) #purple [fit=wires]
+ic:U1 "Oracle" at (470, 230) #purple [left="i0,i1,i2" right="o0,o1,o2" fit=wires]
+and:G2 "G" right-of R2 by 80 aligned-y with R2.out at in2 #blue [inputs=2]
+```
+
 Bad variants, duplicate options, unknown ports, mismatched bus widths, unsafe colours, and out-of-bounds geometry all fail with a line-accurate diagnostic before any SVG is written. `diagnoseSchematic` lists every problem in a document at once, each with its line and column range, for an editor to underline.
 
 ## What it compiles
