@@ -52,6 +52,21 @@ describe('phase-two primitive expansion', () => {
 		expect(result.svg).not.toMatch(/NaN|Infinity|-0(?:\D|$)/);
 	});
 
+	test('draws the battery long plate on the positive terminal in every orientation', () => {
+		for (const orientation of ['right', 'down', 'left', 'up'] as const) {
+			const source = `source:B1 at (200,200) #blue [type=battery orientation=${orientation}]`;
+			const { svg } = compileSchematic(source, fence);
+			const symbol = /symbol-source-battery"><path [^>]* d="([^"]+)"/.exec(svg)![1]!;
+			const plates = [...symbol.matchAll(/M (-?\d+) (-?\d+) V (-?\d+)/g)].map(([, x, top, bottom]) => ({ x: Number(x), height: Number(bottom) - Number(top) }));
+			expect(plates).toHaveLength(2);
+			const long = plates[0]!.height > plates[1]!.height ? plates[0]! : plates[1]!;
+			const turn = (Number(/symbol-source-battery" transform="rotate\((-?\d+)\)"/.exec(svg)?.[1] ?? 0) * Math.PI) / 180;
+			const plate = { x: long.x * Math.cos(turn), y: long.x * Math.sin(turn) };
+			const positive = resolvePortPoint(parseSchematic(source, fence).components[0]!, 'positive')!;
+			expect(plate.x * (positive.x - 200) + plate.y * (positive.y - 200)).toBeGreaterThan(0);
+		}
+	});
+
 	test('uses exact quarter turns for vectors, ports, normals, hotspots, and bounds', () => {
 		const document = parseSchematic(
 			'resistor:R1 "rotated" at (200, 200) #amber [orientation=down]',

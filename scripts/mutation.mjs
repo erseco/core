@@ -434,6 +434,13 @@ const mutants = [
 		tests: ["tests/ports.test.ts", "tests/primitives.test.ts"]
 	},
 	{
+		name: "a battery's long plate is on its positive terminal",
+		file: "src/symbols/electrical.ts",
+		from: "M -42 0 H -8 M -8 -10 V 10 M 8 -16 V 16 M 8 0 H 42",
+		to: "M -42 0 H -8 M -8 -16 V 16 M 8 -10 V 10 M 8 0 H 42",
+		tests: ["tests/primitives.test.ts"]
+	},
+	{
 		name: "a relation is read only where the last one ended",
 		file: "src/syntax.ts",
 		from: "(?:\\\\s+by\\\\s+(${DECIMAL}))?(?:\\\\s+|$)`, 'yd');",

@@ -2,6 +2,16 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
+## [Unreleased]
+
+### Fixed
+
+- **A battery was drawn the wrong way round.** The long plate marks a battery's positive terminal, but the symbol drew it beside the `negative` port, so every battery showed the opposite polarity to the one its terminals carry, in every orientation. A reader following the drawing would connect it backwards. The two plates have changed places, so the long plate now sits on `positive`. Only the drawing changes: both plates keep their extents, so bounds, ports and routes are untouched. Of the 270 corpus documents, only `variant/source/battery` draws different bytes, and its layout and diagnostics digest is unchanged. Found by the CircuiTikZ converter ([schemd/circuitikz#2](https://github.com/schemd/circuitikz/issues/2)).
+
+### Verified
+
+- **A test measures the plate against the port.** In each of the four orientations, it checks that the long plate points the same way as the `positive` terminal, reading both from the compiled output. A new mutant puts the plates back, and 130 of 130 mutants are killed.
+
 ## [1.3.0] - 2026-10-25
 
 1.3 states what every component kind accepts, as data. Nothing about compiling changes: the 270-document corpus is byte-identical to 1.2.0, and the compile path and the package entry are the same bytes.
