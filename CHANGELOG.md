@@ -2,7 +2,7 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
-## [1.3.0] - Unreleased
+## [1.3.0] - 2026-10-25
 
 1.3 states what every component kind accepts, as data. Nothing about compiling changes: the 270-document corpus is byte-identical to 1.2.0, and the compile path and the package entry are the same bytes.
 
