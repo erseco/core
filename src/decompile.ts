@@ -276,7 +276,7 @@ export function parseSchematicSvg(svg: string): SchematicRecovery {
 					? ` [fit=${component.fit}]`
 					: '';
 		lines.push(
-			`${component.kind}:${component.id} "${component.label}" at (${component.x}, ${component.y}) ${colorSyntax(component.color)}${orientation}`
+			`${component.kind}:${component.id}${component.label === '' ? '' : ` "${component.label}"`} at (${component.x}, ${component.y}) ${colorSyntax(component.color)}${orientation}`
 		);
 	}
 	if (connections.length > 0) lines.push('');

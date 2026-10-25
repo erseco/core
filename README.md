@@ -8,7 +8,7 @@
 
 **The [documentation site](https://schemd.johnowolabiidogun.dev/docs/1.0/overview) is the reference.** Every page there is versioned per release line and every example is compiled by the real engine. This file is the short tour.
 
-Version 1.0.2 needs Node.js 24 or newer.
+Version 1.2.0 needs Node.js 24 or newer.
 
 [Docs](https://schemd.johnowolabiidogun.dev/docs/1.0/overview) · [Playground](https://schemd.johnowolabiidogun.dev/playground) · [Inspector](https://schemd.johnowolabiidogun.dev/inspector/1.0.2) · [Changelog](./CHANGELOG.md) · [Roadmap](./ROADMAP.md)
 
@@ -45,6 +45,8 @@ kind:ID "label" at (x, y) #color [options]
 kind:ID "label" right-of REF by 190 #color [options]
 SOURCE.port -> TARGET.port #color [line|bezier|ortho options]
 ```
+
+The quoted label may be left out: `junction:J1 at (300, 120) #slate` draws the designator alone.
 
 A block you draw more than once can be written once as a sub-circuit and placed by name. Instances may nest, take parameters, and are reached through the terminals the block exposes:
 

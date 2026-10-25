@@ -31,23 +31,23 @@ export interface Token {
 	readonly end: number;
 }
 
-/** A component declared `kind:ID "label" at (x, y) tail`. */
+/** A component declared `kind:ID "label" at (x, y) tail`; the label may be left out. */
 export interface AbsoluteComponentSyntax {
 	readonly form: 'absolute';
 	readonly kind: Token;
 	readonly id: Token;
-	readonly label: Token;
+	readonly label: Token | undefined;
 	readonly x: Token;
 	readonly y: Token;
 	readonly tail: Token;
 }
 
-/** A component declared by relation: `kind:ID "label" right-of REF by N tail`. */
+/** A component declared by relation: `kind:ID "label" right-of REF by N tail`; the label may be left out. */
 export interface RelativeComponentSyntax {
 	readonly form: 'relative';
 	readonly kind: Token;
 	readonly id: Token;
-	readonly label: Token;
+	readonly label: Token | undefined;
 	readonly relations: readonly SchematicPlacementRelation[];
 	/** Where each relation's reference — `REF` or `REF.port` — sits on the line. */
 	readonly references: readonly Token[];
@@ -69,8 +69,8 @@ export type DeclarationSyntax = AbsoluteComponentSyntax | RelativeComponentSynta
 const ID = '[A-Za-z][A-Za-z0-9_-]*';
 const PORT = '[A-Za-z][A-Za-z0-9_+-]*';
 const DECIMAL = '-?\\d+(?:\\.\\d+)?';
-const COMPONENT = new RegExp(`^(${ID}):(${ID})\\s+"([^"]+)"\\s+at\\s+\\((${DECIMAL}),\\s*(${DECIMAL})\\)\\s+(.+)$`, 'd');
-const HEAD = new RegExp(`^(${ID}):(${ID})\\s+"([^"]+)"\\s+(.+)$`, 'd');
+const COMPONENT = new RegExp(`^(${ID}):(${ID})(?:\\s+"([^"]+)")?\\s+at\\s+\\((${DECIMAL}),\\s*(${DECIMAL})\\)\\s+(.+)$`, 'd');
+const HEAD = new RegExp(`^(${ID}):(${ID})(?:\\s+"([^"]+)")?\\s+(.+)$`, 'd');
 const CONNECTION = new RegExp(`^(${ID})\\.(${PORT})\\s*->\\s*(${ID})\\.(${PORT})\\s+(.+)$`, 'd');
 /* One relation each, sticky so it matches exactly where the last one ended. */
 const DIRECTION = new RegExp(`(right-of|left-of|above|below)\\s+(${ID})(?:\\.(${PORT}))?(?:\\s+by\\s+(${DECIMAL}))?(?:\\s+|$)`, 'yd');
@@ -82,6 +82,9 @@ const token = (match: RegExpExecArray, group: number): Token => {
 	const [start, end] = match.indices![group]!;
 	return { text: match[group]!, start, end };
 };
+
+/* The label is the one optional group a declaration has. */
+const optional = (match: RegExpExecArray, group: number): Token | undefined => (match[group] === undefined ? undefined : token(match, group));
 
 /** Consume a placement clause relation by relation from `start`; whatever is left is the tail. */
 function placement(text: string, start: number): { relations: SchematicPlacementRelation[]; references: Token[]; tail: number } {
@@ -132,7 +135,7 @@ function placement(text: string, start: number): { relations: SchematicPlacement
 export function scanDeclaration(text: string): DeclarationSyntax | undefined {
 	const component = COMPONENT.exec(text);
 	if (component !== null) {
-		return { form: 'absolute', kind: token(component, 1), id: token(component, 2), label: token(component, 3), x: token(component, 4), y: token(component, 5), tail: token(component, 6) };
+		return { form: 'absolute', kind: token(component, 1), id: token(component, 2), label: optional(component, 3), x: token(component, 4), y: token(component, 5), tail: token(component, 6) };
 	}
 	const head = HEAD.exec(text);
 	if (head !== null) {
@@ -142,7 +145,7 @@ export function scanDeclaration(text: string): DeclarationSyntax | undefined {
 				form: 'relative',
 				kind: token(head, 1),
 				id: token(head, 2),
-				label: token(head, 3),
+				label: optional(head, 3),
 				relations: clause.relations,
 				references: clause.references,
 				tail: { text: text.slice(clause.tail), start: clause.tail, end: text.length }

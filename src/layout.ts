@@ -314,7 +314,9 @@ export function labelRects(component: SchematicComponent): readonly IRect[] {
 		maxX: toMilli((start === undefined ? x + width / 2 : x + start + width) + TEXT_HORIZONTAL_GUTTER),
 		maxY: toMilli(y + baseline + TEXT_DESCENT_GUTTER)
 	});
-	return [row(anchors.designatorWidth, anchors.designatorY), row(anchors.labelWidth, anchors.labelY)];
+	const designator = row(anchors.designatorWidth, anchors.designatorY);
+	/* A part declared without a label draws no label row, so wires need not keep clear of one. */
+	return component.label === '' ? [designator] : [designator, row(anchors.labelWidth, anchors.labelY)];
 }
 
 /** Complete component bounds including text and port hotspots, in milli-units. */
