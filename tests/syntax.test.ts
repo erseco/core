@@ -1,7 +1,8 @@
 /**
  * The hand-written scanner reads exactly the language of the 0.x patterns.
  *
- * The 0.8 regular expressions are kept here as the specification. Every
+ * The 0.8 regular expressions are kept here as the specification, with the one
+ * change 1.2 made to the language: the quoted label may be left out. Every
  * generated line — random token soup and single-token mutations of valid
  * declarations — must classify identically under both, field for field. The
  * generator is seeded, so a failure reproduces.
@@ -10,10 +11,10 @@ import { describe, expect, test } from 'vitest';
 
 import { scanDeclaration } from '../src/syntax.js';
 
-/* ---- the 0.8 specification, verbatim ---- */
+/* ---- the 0.8 specification, with 1.2's optional label ---- */
 const COMPONENT_PATTERN =
-	/^([A-Za-z][A-Za-z0-9_-]*):([A-Za-z][A-Za-z0-9_-]*)\s+"([^"]+)"\s+at\s+\((-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)\s+(.+)$/;
-const COMPONENT_HEAD_PATTERN = /^([A-Za-z][A-Za-z0-9_-]*):([A-Za-z][A-Za-z0-9_-]*)\s+"([^"]+)"\s+(.+)$/;
+	/^([A-Za-z][A-Za-z0-9_-]*):([A-Za-z][A-Za-z0-9_-]*)(?:\s+"([^"]+)")?\s+at\s+\((-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)\s+(.+)$/;
+const COMPONENT_HEAD_PATTERN = /^([A-Za-z][A-Za-z0-9_-]*):([A-Za-z][A-Za-z0-9_-]*)(?:\s+"([^"]+)")?\s+(.+)$/;
 const PLACEMENT_DIRECTION_PATTERN =
 	/^(right-of|left-of|above|below)\s+([A-Za-z][A-Za-z0-9_-]*)(?:\.([A-Za-z][A-Za-z0-9_+-]*))?(?:\s+by\s+(-?\d+(?:\.\d+)?))?(?:\s+|$)/;
 const PLACEMENT_ALIGNMENT_PATTERN =
@@ -72,9 +73,9 @@ function scanned(text: string): unknown {
 	if (syntax === undefined) return undefined;
 	switch (syntax.form) {
 		case 'absolute':
-			return { form: 'absolute', kind: syntax.kind.text, id: syntax.id.text, label: syntax.label.text, x: syntax.x.text, y: syntax.y.text, tail: syntax.tail.text };
+			return { form: 'absolute', kind: syntax.kind.text, id: syntax.id.text, label: syntax.label?.text, x: syntax.x.text, y: syntax.y.text, tail: syntax.tail.text };
 		case 'relative':
-			return { form: 'relative', kind: syntax.kind.text, id: syntax.id.text, label: syntax.label.text, relations: syntax.relations, tail: syntax.tail.text };
+			return { form: 'relative', kind: syntax.kind.text, id: syntax.id.text, label: syntax.label?.text, relations: syntax.relations, tail: syntax.tail.text };
 		case 'connection':
 			return { form: 'connection', fromId: syntax.fromId.text, fromPort: syntax.fromPort.text, toId: syntax.toId.text, toPort: syntax.toPort.text, tail: syntax.tail.text };
 	}
@@ -104,6 +105,9 @@ const FRAGMENTS = [
 const VALID = [
 	'resistor:R1 "R" at (100, 200) #amber',
 	'resistor:R1 "R" at (-1.5,2) #amber [orientation=down]',
+	'resistor:R1 at (100, 200) #amber',
+	'port:P right-of R1 by 40 #blue',
+	'junction:J1 aligned-x with R1 below R2 #slate',
 	'port:P "in" right-of R1 by 40 #blue',
 	'port:P "in" right-of R1.out by -4.25 aligned-y with R1 #blue',
 	'port:P "in" aligned-x with R1.in below R2 #blue',

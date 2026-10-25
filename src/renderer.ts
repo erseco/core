@@ -650,7 +650,7 @@ function componentMarkup(
 	if (mode === 'full') {
 		const metadata = componentMetadata(component);
 		const ariaLabel = escapeXml(
-			`${component.id}, ${component.kind}, ${mathLabelText(component.label)}${metadata === '' ? '' : `, ${metadata}`}`
+			`${component.id}, ${component.kind}${component.label === '' ? '' : `, ${mathLabelText(component.label)}`}${metadata === '' ? '' : `, ${metadata}`}`
 		);
 		/* A focusable group must not contain the full mode's focusable port controls. */
 		accessibility = `${portHooks ? '' : ' tabindex="0"'} role="group" aria-label="${ariaLabel}"`;
@@ -673,7 +673,7 @@ function componentMarkup(
 	 */
 	const labels = isUmlComponent(component)
 		? ''
-		: `<text class="schematic-designator" x="${textX}" y="${svgNumber(anchors.designatorY)}"${textStart}>${id}</text><text class="schematic-label" x="${textX}" y="${svgNumber(anchors.labelY)}"${textStart}>${renderedLabel}</text>`;
+		: `<text class="schematic-designator" x="${textX}" y="${svgNumber(anchors.designatorY)}"${textStart}>${id}</text>${component.label === '' ? '' : `<text class="schematic-label" x="${textX}" y="${svgNumber(anchors.labelY)}"${textStart}>${renderedLabel}</text>`}`;
 	/* Without a stylesheet the paint travels on one inherited group instead of
 	   on each label — same pixels, one shared declaration per component. */
 	const externalLabels =

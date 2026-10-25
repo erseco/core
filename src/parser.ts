@@ -580,7 +580,7 @@ function analyze(source: string, fence: SchematicFence, reporter: Reporter): Sch
 					: { x: 0, y: 0 };
 			component = definition.parse(
 				kind,
-				{ id, label: syntax.label.text, ...position, color: parseSchematicColor(tail.color === '' ? 'slate' : tail.color, line.line), line: line.line },
+				{ id, label: syntax.label?.text ?? '', ...position, color: parseSchematicColor(tail.color === '' ? 'slate' : tail.color, line.line), line: line.line },
 				options,
 				line.line
 			);

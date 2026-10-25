@@ -2,6 +2,31 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
+## [1.2.0] - Unreleased
+
+1.2 lets a part be declared without a label. Every 1.1 document compiles to the same bytes: the 270-document corpus is byte-identical to 1.1.0.
+
+### Added
+
+- **The quoted label is optional.** `resistor:R1 at (240, 80) #amber` and `junction:J1 right-of R1 by 100 #slate` are now declarations; before, a part needed a label, so authors and tools repeated the ID (`junction:J1 "J1"`) and the designator was drawn twice. A part without a label draws its designator alone:
+  - no label row is drawn, and the router no longer keeps wires clear of one;
+  - its accessible name in `full` mode is `R1, resistor, fixed`, without an empty field;
+  - its AST and netlist `label` is the empty string, and `describeSchematic` names it by its ID;
+  - `parseSchematicSvg` reads it back without a label, and the recovered source recompiles to the same parts.
+
+  An empty quoted label, `""`, is still rejected. Requested for the CircuiTikZ converter ([schemd/circuitikz#2](https://github.com/schemd/circuitikz/issues/2)), which has no label to give a part the TeX left unlabelled.
+
+### Size
+
+- **44,637 B gzip and 38,843 B brotli-11 for the compile path, 35 B over 1.1.0**, within the 1.1 budgets.
+
+### Verified
+
+- **100% statement, branch, function and line coverage over 703 tests**, 9 of them on unlabelled parts.
+- **122 of 122 mutants are killed.** Seven are new: each declaration form accepting no label, the empty default, the omitted label row, the accessible name, the router obstacle, and the decompiler.
+- The scanner's equivalence test now specifies the optional label, and checks the scanner against it over 40,000 generated lines.
+- The contract fuzzer held over 20,000 cases.
+
 ## [1.1.0] - 2026-10-24
 
 1.1 lets a part take its height from its wires. Every 1.0 document compiles to the same bytes: the 270-document corpus is byte-identical to 1.0.2, and fitting happens only where a document asks for it.

@@ -370,7 +370,10 @@ export type SchematicQuarterTurn = 0 | 1 | 2 | 3;
 interface ComponentBase extends SchematicPoint {
 	/** Document-unique component identifier used by connection endpoints. */
 	id: string;
-	/** Human-readable label, optionally containing schemd micro-math syntax. */
+	/**
+	 * Human-readable label, optionally containing schemd micro-math syntax.
+	 * Empty when the declaration leaves it out, and then nothing is drawn for it.
+	 */
 	label: string;
 	/** Sanitized semantic or custom vector color. */
 	color: SchematicColor;

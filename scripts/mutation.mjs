@@ -810,6 +810,55 @@ const mutants = [
 		from: "\t\tfor (const point of ends) points.set(pointKey(point), point);",
 		to: "\t\tvoid ends;",
 		tests: ["tests/regressions.test.ts"]
+	},
+	{
+		name: "an absolute declaration may leave its label out",
+		file: "src/syntax.ts",
+		from: "const COMPONENT = new RegExp(`^(${ID}):(${ID})(?:\\\\s+\"([^\"]+)\")?",
+		to: "const COMPONENT = new RegExp(`^(${ID}):(${ID})\\\\s+\"([^\"]+)\"",
+		tests: ["tests/labels.test.ts"]
+	},
+	{
+		name: "a relative declaration may leave its label out",
+		file: "src/syntax.ts",
+		from: "const HEAD = new RegExp(`^(${ID}):(${ID})(?:\\\\s+\"([^\"]+)\")?",
+		to: "const HEAD = new RegExp(`^(${ID}):(${ID})\\\\s+\"([^\"]+)\"",
+		tests: ["tests/labels.test.ts"]
+	},
+	{
+		name: "a part declared without a label has the empty label",
+		file: "src/parser.ts",
+		from: "label: syntax.label?.text ?? ''",
+		to: "label: syntax.label?.text ?? syntax.id.text",
+		tests: ["tests/labels.test.ts"]
+	},
+	{
+		name: "a part without a label draws no label row",
+		file: "src/renderer.ts",
+		from: "${textStart}>${id}</text>${component.label === '' ? '' :",
+		to: "${textStart}>${id}</text>${false ? '' :",
+		tests: ["tests/labels.test.ts"]
+	},
+	{
+		name: "a part without a label leaves it out of its accessible name",
+		file: "src/renderer.ts",
+		from: "${component.kind}${component.label === '' ? '' : `, ${mathLabelText(component.label)}`}",
+		to: "${component.kind}${`, ${mathLabelText(component.label)}`}",
+		tests: ["tests/labels.test.ts"]
+	},
+	{
+		name: "wires need not keep clear of a label row that is not drawn",
+		file: "src/layout.ts",
+		from: "return component.label === '' ? [designator] :",
+		to: "return false ? [designator] :",
+		tests: ["tests/labels.test.ts"]
+	},
+	{
+		name: "a part without a label decompiles without one",
+		file: "src/decompile.ts",
+		from: "${component.id}${component.label === '' ? '' : ` \"${component.label}\"`} at (",
+		to: "${component.id} \"${component.label}\" at (",
+		tests: ["tests/labels.test.ts"]
 	}
 ];
 
