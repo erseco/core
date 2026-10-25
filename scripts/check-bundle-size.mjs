@@ -120,6 +120,20 @@ const BUDGETS = [
 		   `fit=wires` back (45,948 B to 47,690 B gzip). */
 		maxGzipBytes: 47 * 1024,
 		maxBrotliBytes: 41 * 1024
+	},
+	{
+		label: 'Schema entry (@schemd/core/schema)',
+		module: '../src/schema.ts',
+		entry: (path) => `import * as schema from ${JSON.stringify(path)};globalThis.schemdSchema=schema;`,
+		/*
+		 * New in 1.3. The schema is data, but describeComponentPorts asks the
+		 * symbol registry for a kind's ports, so the parsers of every kind come
+		 * with it. Only a tool that lists components imports this entry; the two
+		 * budgets above do not include it. 16,465 B gzip and 14,565 B brotli-11
+		 * when it was added; nearly all of it is the symbol registry.
+		 */
+		maxGzipBytes: 16.5 * 1024,
+		maxBrotliBytes: 14.5 * 1024
 	}
 ];
 

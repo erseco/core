@@ -8,7 +8,7 @@
 
 **The [documentation site](https://schemd.johnowolabiidogun.dev/docs/1.0/overview) is the reference.** Every page there is versioned per release line and every example is compiled by the real engine. This file is the short tour.
 
-Version 1.2.0 needs Node.js 24 or newer.
+Version 1.3.0 needs Node.js 24 or newer.
 
 [Docs](https://schemd.johnowolabiidogun.dev/docs/1.0/overview) · [Playground](https://schemd.johnowolabiidogun.dev/playground) · [Inspector](https://schemd.johnowolabiidogun.dev/inspector/1.0.2) · [Changelog](./CHANGELOG.md) · [Roadmap](./ROADMAP.md)
 
@@ -78,6 +78,8 @@ Bad variants, duplicate options, unknown ports, mismatched bus widths, unsafe co
 Electrical, digital, quantum, and UML families — the full vocabulary is in the [component reference](https://schemd.johnowolabiidogun.dev/docs/1.0/component-reference).
 
 A compiled diagram is also a model. `buildNetlist` gives you nodes, nets, and edges; `verifyNetlist` runs seven design rules over them; `describeSchematic` turns the same connectivity into prose for a screen reader. The compilation also hands back its own working: `sourceMap` (every vector's declaration line), `placements` (what each relation resolved to), and `routing` (negotiation rounds, torn-up wires, per-cell congestion).
+
+Every kind's options are also available as data. `@schemd/core/schema` exports `SCHEMATIC_COMPONENT_SCHEMAS`, which gives each option's type, its allowed values or range and its default, and `describeComponentPorts(kind, options)`, which asks the parser for a part's terminals. A test proves the schema against the parser, so an editor can list what a kind accepts without copying a table.
 
 And the output is readable back. `snapshotSchematic` writes a text digest of the geometry, so a routing change reviews as a handful of moved coordinates rather than an image diff; `parseSchematicSvg` reads a `full`-mode SVG back into declarations, naming what the markup does not carry rather than guessing at it.
 

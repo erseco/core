@@ -2,7 +2,32 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
-## [1.2.0] - Unreleased
+## [1.3.0] - Unreleased
+
+1.3 states what every component kind accepts, as data. Nothing about compiling changes: the 270-document corpus is byte-identical to 1.2.0, and the compile path and the package entry are the same bytes.
+
+### Added
+
+- **`@schemd/core/schema` describes every kind's options.** An editor that wanted to list what `ground` or `mux` accepts had to read the parser or copy a table by hand, and a copied table drifts. `SCHEMATIC_COMPONENT_SCHEMAS` gives each of the compiler's kinds its family and its options, each with a type and what that type allows:
+  - `enum`, with its values and default;
+  - `integer` or `number`, with its range, its default, and any default that depends on the kind's `type` (a full adder's three inputs, a demultiplexer's two outputs);
+  - `text`, with its length bounds;
+  - `pins`, with the most pins per side, the pattern a pin name must match and the names it may not take;
+  - `rows`, with the most rows and the longest row.
+
+  A kind that needs one of several options says so in `requiresOneOf` (an IC needs a pin on some side), and pairs that cannot appear together are listed in `conflicts` (`fit` and `orientation`).
+- **`describeComponentPorts(kind, options)` lists a part's canonical terminals.** Ports depend on options, such as a gate's `inputs` or a switch's `type`, so they are asked of the parser and never listed by hand. A bad option throws the parser's own `SchematicSyntaxError`, without a line, since there is no document.
+
+### Verified
+
+- **The schema is proved against the parser, kind by kind and option by option.** For every kind, `tests/schema.test.ts` checks four things. Each declared value compiles, and each value just past a declared bound fails. An option the kind does not declare fails too. Finally, a declared default draws the same figure as leaving the option out. Drafting the schema, the suite caught one wrong claim before release: an empty `operator`, `parameter`, `phase` or `matrix` is accepted, so their minimum length is 0.
+- **100% coverage over 1,186 tests, and 129 of 129 mutants are killed.** Seven new mutants cover the schema: a swap's zero default controls, a buffer's fixed counts, a full adder's default, a stereotype's minimum length, an IC's required pin, ports following their options, and a ports error carrying no line.
+
+### Size
+
+- **The compile path and the package entry are unchanged**, at 44,637 B and 47,717 B gzip. The schema is a separate entry at 16,465 B gzip and 14,565 B brotli-11, budgeted at 16.5 KiB and 14.5 KiB. Nearly all of it is the symbol registry that `describeComponentPorts` asks.
+
+## [1.2.0] - 2026-10-25
 
 1.2 lets a part be declared without a label. Every 1.1 document compiles to the same bytes: the 270-document corpus is byte-identical to 1.1.0.
 

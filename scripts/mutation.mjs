@@ -859,6 +859,55 @@ const mutants = [
 		from: "${component.id}${component.label === '' ? '' : ` \"${component.label}\"`} at (",
 		to: "${component.id} \"${component.label}\" at (",
 		tests: ["tests/labels.test.ts"]
+	},
+	{
+		name: "a swap has no controls until it is given some",
+		file: "src/schema.ts",
+		from: "define(['swap'], 'quantum', [count('controls', 0)",
+		to: "define(['swap'], 'quantum', [count('controls', 1)",
+		tests: ["tests/schema.test.ts"]
+	},
+	{
+		name: "a buffer's terminal counts are fixed at one",
+		file: "src/schema.ts",
+		from: "count('inputs', 1, 1, 1), count('outputs', 1, 1, 1), orientation]);",
+		to: "count('inputs', 1), count('outputs', 1, 1, 1), orientation]);",
+		tests: ["tests/schema.test.ts"]
+	},
+	{
+		name: "a full adder defaults to three inputs",
+		file: "src/schema.ts",
+		from: "count('inputs', 2, 1, 32, { full: 3 })",
+		to: "count('inputs', 2, 1, 32, { full: 2 })",
+		tests: ["tests/schema.test.ts"]
+	},
+	{
+		name: "a stereotype needs at least one character",
+		file: "src/schema.ts",
+		from: "text('stereotype', 1, 128)",
+		to: "text('stereotype', 0, 128)",
+		tests: ["tests/schema.test.ts"]
+	},
+	{
+		name: "an IC needs one pin on some side",
+		file: "src/schema.ts",
+		from: "requiresOneOf: ['left', 'right', 'top', 'bottom'],",
+		to: "requiresOneOf: ['left', 'right', 'top'],",
+		tests: ["tests/schema.test.ts"]
+	},
+	{
+		name: "ports are asked of the parser with the options given",
+		file: "src/schema.ts",
+		from: "new Map(Object.entries(options)), 1);",
+		to: "new Map(), 1);",
+		tests: ["tests/schema.test.ts"]
+	},
+	{
+		name: "a ports error carries no line, since there is no document",
+		file: "src/schema.ts",
+		from: "failure.message.replace(/^Line 1: /, '')",
+		to: "failure.message",
+		tests: ["tests/schema.test.ts"]
 	}
 ];
 
