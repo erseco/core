@@ -14,7 +14,7 @@
     "name": "John Owolabi Idogun",
     "url": "https://www.johnowolabiidogun.dev"
   },
-  "packageManager": "bun@1.4.3",
+  "packageManager": "bun@1.4.4",
   "type": "module",
   "sideEffects": false,
   "browser": false,
@@ -98,7 +98,7 @@
     "@playwright/test": "^1.64.1",
     "@vitest/coverage-v8": "^5.0.5",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4",
+    "vite": "^8.3.5",
     "vitest": "^5.0.5"
   },
   "engines": {
