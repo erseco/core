@@ -27,7 +27,7 @@ even if you skip the rest — they are what a pull request is measured against.
 
 ## Setup
 
-Node 24 or newer, and Bun (pinned to `bun@1.3.14`).
+Node 24 or newer, and Bun (pinned to `bun@1.4.3`).
 
 ```sh
 bun install
@@ -235,3 +235,11 @@ since it carries the document in the URL.
 
 [Issues](https://github.com/schemd/core/issues) · [Roadmap](./ROADMAP.md) ·
 [Changelog](./CHANGELOG.md) · [MIT](./LICENSE)
+
+## Package compatibility
+
+After building, `node scripts/check-package.mjs` packs the package, installs that tarball into a
+temporary consumer, imports every public entry under Node and Bun, and compiles a TypeScript
+consumer. CI runs this on Linux, macOS, and Windows under Node 24 and 26. The required `Verify`
+job waits for every consumer case. Release tags must point to a commit already on `main`.
+Publishing consumes the verified tarball; prereleases use npm's `next` tag.

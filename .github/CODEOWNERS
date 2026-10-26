@@ -1,0 +1,8 @@
+# The maintainer reviews contributions, contracts, and release configuration.
+* @Sirneij
+/.github/ @Sirneij
+/scripts/ @Sirneij
+/package.json @Sirneij
+/bun.lock @Sirneij
+/SECURITY.md @Sirneij
+/MAINTAINERS.md @Sirneij

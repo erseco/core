@@ -1,0 +1,22 @@
+name: Propose a feature
+description: Explain an authoring problem and a concrete proposed behaviour.
+labels: [enhancement, "needs decision"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe a real use case and the current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: Include an example and any compatibility or performance implications.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
