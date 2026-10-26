@@ -1,0 +1,31 @@
+name: Report a defect
+description: Report a reproducible problem.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version and runtime
+      description: Package version or commit, Node/Bun version, and browser if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest schemd source and its full fence (bounds, title, and mode).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include diagnostics or relevant output. Remove credentials and private data.
+    validations:
+      required: true

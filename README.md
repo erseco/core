@@ -105,3 +105,8 @@ Upgrading across 0.4 as well? See [migration](https://schemd.johnowolabiidogun.d
 `bun install`, then `bun run test:visual:install` once, then `bun run release:check`. [CONTRIBUTING.md](./CONTRIBUTING.md) covers the invariants and what each gate protects.
 
 [Issues](https://github.com/schemd/core/issues) · [MIT](./LICENSE)
+
+## Community
+
+[Contributing](./CONTRIBUTING.md) · [Support](./SUPPORT.md) · [Security](./SECURITY.md) ·
+[Code of Conduct](./CODE_OF_CONDUCT.md) · [Maintainers](./MAINTAINERS.md)
