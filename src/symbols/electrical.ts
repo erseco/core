@@ -319,7 +319,7 @@ const electrical: KindDef<ElectricalComponent> = {
 			case 'connector':
 				return `<path ${paint} d="M -32 0 H -9 M 9 0 H 32" /><circle ${paint} cx="0" cy="0" r="9" />`;
 			case 'source': {
-				if (variant === 'battery') return `<path ${paint} d="M -42 0 H -8 M -8 -16 V 16 M 8 -10 V 10 M 8 0 H 42" />`;
+				if (variant === 'battery') return `<path ${paint} d="M -42 0 H -8 M -8 -10 V 10 M 8 -16 V 16 M 8 0 H 42" />`;
 				const dependent = DEPENDENT.has(variant);
 				const body = dependent ? `<path ${paint} d="M -24 0 L 0 -24 24 0 0 24 Z" />` : `<circle ${paint} cx="0" cy="0" r="24" />`;
 				const controls = dependent ? `<path ${paint} d="M 0 -34 V -24 M 0 24 V 34" />` : '';
