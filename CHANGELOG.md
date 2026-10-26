@@ -8,9 +8,13 @@ All notable changes to `@schemd/core` are recorded here. Dates describe actual n
 
 - **A battery was drawn the wrong way round.** The long plate marks a battery's positive terminal, but the symbol drew it beside the `negative` port, so every battery showed the opposite polarity to the one its terminals carry, in every orientation. A reader following the drawing would connect it backwards. The two plates have changed places, so the long plate now sits on `positive`. Only the drawing changes: both plates keep their extents, so bounds, ports and routes are untouched. Of the 270 corpus documents, only `variant/source/battery` draws different bytes, and its layout and diagnostics digest is unchanged. Found by the CircuiTikZ converter ([schemd/circuitikz#2](https://github.com/schemd/circuitikz/issues/2)).
 
+- **Source polarity marks pointed at neither terminal.** The `+` and `−` of `voltage-dc`, `vcvs` and `ccvs` were stacked across the terminal axis, and the arrow of `current-dc`, `vccs` and `cccs` pointed across it, so in no orientation did the drawing say which terminal was positive or which way the source drives. The `+` now sits beside `positive` and the `−` beside `negative`, drawn upright in every orientation, outside the shared rotated symbol. The arrow lies along the axis and points at `negative`: following SPICE (ngspice manual, section 4.1), positive current flows from `positive`, through the source, to `negative`. This convention is now written beside the source ports, and `in` and `out` remain aliases of `negative` and `positive`. Ports, control ports, bounds and routes are unchanged. Of the 270 corpus documents, 12 draw different bytes (the source variants and orientations, and the diagrams that use the default `voltage-dc`), and none of their layout and diagnostics digests moves ([#12](https://github.com/schemd/core/issues/12)).
+
 ### Verified
 
 - **A test measures the plate against the port.** In each of the four orientations, it checks that the long plate points the same way as the `positive` terminal, reading both from the compiled output. A new mutant puts the plates back, and 130 of 130 mutants are killed.
+
+- **A test measures each polarity mark against its terminal.** For all six source types, in all four orientations and all three output modes, it reads the `+` and `−` and the arrow from the compiled output and checks them against the `positive` and `negative` ports. One document holds every orientation, so the marks are checked through the reused symbol. The same test pins the ports, the `in`/`out` aliases, the control ports, the obstacle bounds, the netlist and the route start. Three new mutants reverse the arrow, move the `+` and drop the signs from `ccvs`.
 
 ## [1.3.0] - 2026-10-25
 

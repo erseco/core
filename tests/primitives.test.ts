@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
+	buildNetlist,
 	compileSchematic,
+	componentObstacleRectangle,
 	parseSchematic,
 	parseSchematicFence,
 	renderSchematic,
@@ -64,6 +66,64 @@ describe('phase-two primitive expansion', () => {
 			const plate = { x: long.x * Math.cos(turn), y: long.x * Math.sin(turn) };
 			const positive = resolvePortPoint(parseSchematic(source, fence).components[0]!, 'positive')!;
 			expect(plate.x * (positive.x - 200) + plate.y * (positive.y - 200)).toBeGreaterThan(0);
+		}
+	});
+
+	test('draws source polarity marks towards their own terminals in every orientation and output mode', () => {
+		const axes = { right: [1, 0], down: [0, 1], left: [-1, 0], up: [0, -1] } as const;
+		const toward = (mark: { x: number; y: number }, terminal: { x: number; y: number }) => mark.x * terminal.x + mark.y * terminal.y;
+		for (const type of ['voltage-dc', 'vcvs', 'ccvs', 'current-dc', 'vccs', 'cccs']) {
+			const dependent = type.length === 4;
+			const orientations = Object.keys(axes) as (keyof typeof axes)[];
+			/* One document holds every orientation, so all four share one cached symbol. */
+			const source = [
+				...orientations.map((orientation, i) => `source:S${i} at (${200 + i * 300}, 200) #blue [type=${type} orientation=${orientation}]`),
+				...orientations.map((orientation, i) => `testpoint:P${i} at (${200 + i * 300 + axes[orientation][0] * 90}, ${200 + axes[orientation][1] * 90}) #rose`),
+				...orientations.map((_, i) => `S${i}.positive -> P${i}.node #rose`)
+			].join('\n');
+			const document = parseSchematic(source, fence);
+			const nets = buildNetlist(document).nets.map((net) => net.terminals.map((end) => `${end.componentId}.${end.port}`).sort().join(' '));
+			for (const mode of ['default', 'embedded-css', 'full'] as const) {
+				const { svg } = compileSchematic(source, { ...fence, mode });
+				const groups = svg.split('<g class="schematic-component"').slice(1);
+				const symbol = new RegExp(`symbol-source-${type}">(.*?)</g>`).exec(svg)![1]!;
+				expect(svg.match(/ id="[^"]*-symbol-/g)).toHaveLength(2);
+				orientations.forEach((orientation, i) => {
+					const [dx, dy] = axes[orientation];
+					const centre = { x: 200 + i * 300, y: 200 };
+					const at = (along: number, across = 0) => ({ x: centre.x + along * dx - across * dy, y: centre.y + along * dy + across * dx });
+					const component = document.components[i]!;
+					expect(resolvePortPoint(component, 'negative')).toEqual(at(-42));
+					expect(resolvePortPoint(component, 'positive')).toEqual(at(42));
+					expect(resolvePortPoint(component, 'in')).toEqual(at(-42));
+					expect(resolvePortPoint(component, 'out')).toEqual(at(42));
+					if (dependent) {
+						expect(resolvePortPoint(component, 'control-positive')).toEqual(at(0, -34));
+						expect(resolvePortPoint(component, 'control-negative')).toEqual(at(0, 34));
+					}
+					const half = dx === 0 ? { x: 46, y: 54 } : { x: 54, y: 46 };
+					expect(componentObstacleRectangle(component)).toEqual({ minX: centre.x - half.x, minY: centre.y - half.y, maxX: centre.x + half.x, maxY: centre.y + half.y });
+					expect(nets).toContain(`P${i}.node S${i}.positive`);
+					if (mode === 'full') expect(svg).toMatch(new RegExp(`data-wire-source="S${i}\\.positive"[^>]*><path [^>]* d="M ${at(42).x} ${at(42).y} `));
+					const group = groups.find((markup) => markup.includes(`translate(${centre.x} ${centre.y})`))!;
+					const terminal = { positive: { x: dx, y: dy }, negative: { x: -dx, y: -dy } };
+					if (type.startsWith('voltage') || type.endsWith('vs')) {
+						/* Upright: the `+` is one horizontal and one vertical stroke, the `−` one horizontal stroke, outside the rotation. */
+						const [, , plusY, , plusX, , , minusStart, minusY, minusEnd] = /d="M (-?\d+) (-?\d+) H (-?\d+) M (-?\d+) (-?\d+) V (-?\d+) M (-?\d+) (-?\d+) H (-?\d+)"/.exec(group)!.map(Number);
+						expect(toward({ x: plusX!, y: plusY! }, terminal.positive)).toBeGreaterThan(0);
+						expect(toward({ x: (minusStart! + minusEnd!) / 2, y: minusY! }, terminal.negative)).toBeGreaterThan(0);
+						expect(symbol).not.toMatch(/ L -?\d+ -?\d+ -?\d+ -?\d+"/);
+					} else {
+						/* SPICE: positive current flows from `positive`, through the source, to `negative`. */
+						const [, tipX, tipY] = /L (-?\d+) (-?\d+) -?\d+ -?\d+"/.exec(symbol)!.map(Number);
+						const turn = (Number(/symbol-source-[^"]+"(?: transform="rotate\((-?\d+)\)")?/.exec(group)![1] ?? 0) * Math.PI) / 180;
+						const tip = { x: tipX! * Math.cos(turn) - tipY! * Math.sin(turn), y: tipX! * Math.sin(turn) + tipY! * Math.cos(turn) };
+						expect(toward(tip, terminal.negative)).toBeGreaterThan(0);
+						expect(Math.abs(toward(tip, { x: -dy, y: dx }))).toBeLessThan(1e-9);
+						expect(group).not.toMatch(/ H -?\d+ M -?\d+ -?\d+ V /);
+					}
+				});
+			}
 		}
 	});
 

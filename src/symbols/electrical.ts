@@ -228,6 +228,16 @@ const electricalDefaults: Readonly<Record<string, readonly [string, readonly str
 	load: ['lamp', LOAD_TYPES]
 };
 
+const VOLTAGE_SIGNS = new Set(['voltage-dc', 'vcvs', 'ccvs']);
+/** Where the `+` sits for each orientation; the `−` mirrors it through the centre. */
+const PLUS_AT: Readonly<Record<string, readonly [number, number]>> = { right: [11, 0], down: [0, 11], left: [-11, 0], up: [0, -11] };
+
+/** Upright `+` beside `positive` and `−` beside `negative`, drawn outside the rotated, shared symbol. */
+function voltageSigns(component: ElectricalComponent): string {
+	const [x, y] = PLUS_AT[('orientation' in component && component.orientation) || 'right']!;
+	return `<path ${colorAttributes(component.color)} d="M ${x - 7} ${y} H ${x + 7} M ${x} ${y - 7} V ${y + 7} M ${-x - 7} ${-y} H ${-x + 7}" />`;
+}
+
 function electricalPorts(component: ElectricalComponent): LocalPort[] {
 	const variant = component.variant ?? '';
 	switch (component.kind) {
@@ -237,6 +247,12 @@ function electricalPorts(component: ElectricalComponent): LocalPort[] {
 		case 'connector':
 			return [port('in', -32, 0, -1, 0), port('out', 32, 0, 1, 0)];
 		case 'source': {
+			/*
+			 * SPICE reference direction (ngspice manual §4.1): the voltage is `positive`
+			 * minus `negative`, and positive current flows from `positive` through the
+			 * source to `negative`, so a current source's arrow points at `negative`.
+			 * `in` and `out` stay aliases of `negative` and `positive`.
+			 */
 			const ports = [named(IN, 'negative'), named(OUT, 'positive')];
 			if (DEPENDENT.has(variant)) ports.push(port('control-positive', 0, -34, 0, -1), port('control-negative', 0, 34, 0, 1));
 			return ports;
@@ -329,8 +345,8 @@ const electrical: KindDef<ElectricalComponent> = {
 					: variant === 'voltage-pulse'
 						? `<path ${paint} d="M -14 8 H -7 V -8 H 7 V 8 H 14" />`
 						: current
-							? `<path ${paint} d="M 0 12 V -12 M -6 -5 L 0 -12 6 -5" />`
-							: `<path ${paint} d="M -7 -8 H 7 M 0 -15 V -1 M -7 9 H 7" />`;
+							? `<path ${paint} d="M 12 0 H -12 M -5 -6 L -12 0 -5 6" />`
+							: '';
 				return `<path ${paint} d="M -42 0 H -24 M 24 0 H 42" />${body}${controls}${glyph}`;
 			}
 			case 'power':
@@ -361,6 +377,7 @@ const electrical: KindDef<ElectricalComponent> = {
 		}
 	},
 	inner(component) {
+		if (component.kind === 'source') return VOLTAGE_SIGNS.has(component.variant!) ? voltageSigns(component) : '';
 		if ((component.kind !== 'meter' && component.kind !== 'load') || component.variant === 'lamp' || component.variant === 'speaker' || component.variant === 'buzzer') return '';
 		return `<text ${colorAttributes(component.color, 'schematic-gate-symbol')} stroke="none" x="0" y="5" text-anchor="middle" font-size="14">${component.variant === 'voltmeter' ? 'V' : component.variant === 'ammeter' ? 'A' : 'M'}</text>`;
 	},
