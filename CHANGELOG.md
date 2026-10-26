@@ -2,7 +2,7 @@
 
 All notable changes to `@schemd/core` are recorded here. Dates describe actual npm publication dates; unpublished versions deliberately use `Unreleased`.
 
-## [Unreleased]
+## [1.3.1] - 2026-10-26
 
 ### Fixed
 
@@ -30,6 +30,7 @@ All notable changes to `@schemd/core` are recorded here. Dates describe actual n
   - `rows`, with the most rows and the longest row.
 
   A kind that needs one of several options says so in `requiresOneOf` (an IC needs a pin on some side), and pairs that cannot appear together are listed in `conflicts` (`fit` and `orientation`).
+
 - **`describeComponentPorts(kind, options)` lists a part's canonical terminals.** Ports depend on options, such as a gate's `inputs` or a switch's `type`, so they are asked of the parser and never listed by hand. A bad option throws the parser's own `SchematicSyntaxError`, without a line, since there is no document.
 
 ### Verified
