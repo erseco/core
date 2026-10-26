@@ -28,7 +28,7 @@
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"singleton/source": {
-		"drawing": "270cd8199a964cd8f3fbdfe1301615c83c3fcddd6e2e7f61145278f3f6ee5fe2",
+		"drawing": "e4e7804d50546d218f3daf4d2d8745b12539b63009e5643e294e3de9cb932116",
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"singleton/junction": {
@@ -556,7 +556,7 @@
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"variant/source/voltage-dc": {
-		"drawing": "4cd7afbe4911c33bb04ec28fa9ec1316085f452f6f25f14dde92e1eef9b1fd39",
+		"drawing": "76d00ce5a5b2cf5d31269ac94d9e5c6b8e10e13159a6df4bb785b72bdce4efc2",
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"variant/source/voltage-ac": {
@@ -568,11 +568,11 @@
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"variant/source/vcvs": {
-		"drawing": "04fa57cc75465f721139368cf9ca6b734d70a2c4e6af92b92352481fd4724278",
+		"drawing": "2f539f24a9b9ad131d5f2f68da1a5963aedf78914f8b8098ff9b8e408b221ab6",
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"variant/source/cccs": {
-		"drawing": "e6e39d1c7d0f8053f3a8139daea9dd535c388d814ebd8012e30887b1da995cf0",
+		"drawing": "599011ea6d3f9b73b877d7f3a99ad6939996b0b3329f633d5499833491d44f34",
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"variant/switch/spst": {
@@ -688,19 +688,19 @@
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"orientation/source/right": {
-		"drawing": "47a2745a31930eea84b3ed149198552ec3695ffea0d13b5c21afa1e72ce1bbf2",
+		"drawing": "3de9ae4260503cfc1512b5551cbdd3f6636f3dde0db74e1643ba1d1ad9857e22",
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"orientation/source/down": {
-		"drawing": "ee3209f80ce1b4c3da79442cfcdd63058da8754ea3c01540fe3a9a722a6cf84c",
+		"drawing": "ba3ba1ecf73b9013f25d26a73570158b311e8eb1ee0ad63f8e91fd64d0164d05",
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"orientation/source/left": {
-		"drawing": "c4a48d47e4092809a0043f092842811b1ddde41f95ff96cebff154a864358db7",
+		"drawing": "acacbe2b2d156bb732231b40fb3957b5312fb1b623bd439f780a0d2a6e404655",
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"orientation/source/up": {
-		"drawing": "d7dab2911a6d30edeaef3e5af41fc2b1501443da51eeccbe7fcb705bf73e9bf7",
+		"drawing": "45f99ed28bd4cab1332e7765978a9d6c0e1a3aed675487dbb7497386345a9847",
 		"evidence": "87a23aa472da391ac32243b3222bcec4be5781282cb69484e2659b29d0866a72"
 	},
 	"orientation/ic/right": {
@@ -1044,15 +1044,15 @@
 		"evidence": "20cd938a2ea64f612b3523bc9219130c6fc66cd09b394ea38437488c0b8898b2"
 	},
 	"trunk/fan-out/default": {
-		"drawing": "6a9f36d736222de243b5ec38c6fadf6b4b4cdc769cacc6af212f161ee9bc43ef",
+		"drawing": "6ffadd335642b90007268138fda8ec18f64adb875513c06c6fce23cc2fdfbea5",
 		"evidence": "ba4937807874d02338a181f188bc5d8060a7fcf2fca060e6d897932ffb238641"
 	},
 	"trunk/fan-out/embedded-css": {
-		"drawing": "89cadae24305fb985d5d5ad31b64123d6cabb205eb83d9eaf47c331dde67c1d1",
+		"drawing": "280e9db9f922b1c5327cbe3f0aa6a1bc88e2ae8c814eb29024bdff7f77df76da",
 		"evidence": "ba4937807874d02338a181f188bc5d8060a7fcf2fca060e6d897932ffb238641"
 	},
 	"trunk/fan-out/full": {
-		"drawing": "bde54b1a29334746bde558f17231c5cc9e808779545967eb8f15b937cddcb9e7",
+		"drawing": "ec783dd0deb87db4d6214f8cd1f83cd83c4074f308cebf4a6016d12bb20ff0f8",
 		"evidence": "ba4937807874d02338a181f188bc5d8060a7fcf2fca060e6d897932ffb238641"
 	},
 	"trunk/fan-in": {
@@ -1064,7 +1064,7 @@
 		"evidence": "b1d3ef8840ccb55799d472f9e0d5fe8df3da7140fb00f3ceae6f42ef7958faa7"
 	},
 	"subcircuit/nested": {
-		"drawing": "ceb8cf6d4ca40b7026d30e077df5401fa59ab90cf3ccf4b05f2bef71ab733709",
+		"drawing": "4b233aec0424be0d3d63c9516a8f6de91267028e0546d21bacf56928a7e502b6",
 		"evidence": "79d1ad072dfcfaa41647b6e3bc78e7dd21261094469aeac3cfa69034bda18ab0"
 	},
 	"diagnostic/trunk-without-copper": {

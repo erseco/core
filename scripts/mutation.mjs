@@ -441,6 +441,27 @@ const mutants = [
 		tests: ["tests/primitives.test.ts"]
 	},
 	{
+		name: "a current source's arrow points at its negative terminal",
+		file: "src/symbols/electrical.ts",
+		from: "M 12 0 H -12 M -5 -6 L -12 0 -5 6",
+		to: "M -12 0 H 12 M 5 -6 L 12 0 5 6",
+		tests: ["tests/primitives.test.ts"]
+	},
+	{
+		name: "a voltage source's plus sign sits beside its positive terminal",
+		file: "src/symbols/electrical.ts",
+		from: "{ right: [11, 0], down: [0, 11], left: [-11, 0], up: [0, -11] }",
+		to: "{ right: [11, 0], down: [0, -11], left: [-11, 0], up: [0, 11] }",
+		tests: ["tests/primitives.test.ts"]
+	},
+	{
+		name: "a current-controlled voltage source carries its signs",
+		file: "src/symbols/electrical.ts",
+		from: "new Set(['voltage-dc', 'vcvs', 'ccvs'])",
+		to: "new Set(['voltage-dc', 'vcvs'])",
+		tests: ["tests/primitives.test.ts"]
+	},
+	{
 		name: "a relation is read only where the last one ended",
 		file: "src/syntax.ts",
 		from: "(?:\\\\s+by\\\\s+(${DECIMAL}))?(?:\\\\s+|$)`, 'yd');",
